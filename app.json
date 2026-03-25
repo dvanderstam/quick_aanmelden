@@ -24,7 +24,7 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "https://quickamsterdam.nl/wp-content/uploads/2022/02/Quick_logo_footer.svg"
+      "favicon": "./assets/favicon.png"
     },
     "scheme": "quick-aanmelden",
     "plugins": [
