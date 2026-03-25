@@ -8,7 +8,7 @@
 # Proxy ICS feed to avoid CORS issues
 [[redirects]]
   from = "/api/ics"
-  to = "https://api.foys.io/competition/public-api/v1/teams/c859ae03-1f85-4f95-a342-32b51a13f146/ics"
+  to = "https://api.foys.io/competition/public-api/v1/teams/c19eccfc-506d-42df-a579-28bfe45aa3a6/ics"
   status = 200
   force = true
 

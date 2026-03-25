@@ -38,11 +38,7 @@ function formatFullDate(date: Date): string {
 
 function openMaps(address: string) {
   const encoded = encodeURIComponent(address);
-  const url =
-    Platform.OS === 'ios'
-      ? `maps:?q=${encoded}`
-      : `geo:0,0?q=${encoded}`;
-  Linking.openURL(url);
+  Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encoded}`);
 }
 
 export default function GameDetailScreen() {
