@@ -6,7 +6,7 @@ import { getCurrentPlayer } from '../src/auth';
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
-  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [mustChangePassword, setMustChangePassword] = useState<boolean | null>(null);
   const router = useRouter();
   const segments = useSegments();
 
@@ -24,18 +24,21 @@ export default function RootLayout() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Re-check the password flag whenever session or the current route changes
   useEffect(() => {
     if (!session) {
       setMustChangePassword(false);
       return;
     }
+    setMustChangePassword(null); // mark as loading so nav guard waits
     getCurrentPlayer().then((player) => {
       setMustChangePassword(player?.must_change_password ?? false);
     });
-  }, [session]);
+  }, [session, segments]);
 
   useEffect(() => {
-    if (session === undefined) return; // still loading
+    if (session === undefined) return; // session still loading
+    if (session && mustChangePassword === null) return; // password flag still loading
 
     const authPages = ['login', 'register', 'change-password'];
     const onAuthPage = authPages.includes(segments[0] as string);
