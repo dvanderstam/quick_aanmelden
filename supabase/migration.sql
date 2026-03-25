@@ -36,6 +36,10 @@ alter table attendance enable row level security;
 create policy "players_select" on players
   for select using (auth.role() = 'authenticated');
 
+-- Players: anyone (including anonymous) can view unclaimed players (needed for register page)
+create policy "players_select_unclaimed_anon" on players
+  for select using (auth_user_id is null);
+
 -- Players: users can claim an unclaimed player (set auth_user_id to own ID)
 create policy "players_claim" on players
   for update

@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { fetchGames } from '../src/icsParser';
 import { getAttendanceSummary } from '../src/storage';
 import { TEAM_NAME } from '../src/config';
@@ -35,7 +35,7 @@ function GameCard({
   onPress,
 }: {
   game: Game;
-  summary: { present: number; absent: number; uncertain: number } | null;
+  summary: { present: number; absent: number; uncertain: number; noResponse: number } | null;
   onPress: () => void;
 }) {
   const isPast = game.startDate < new Date();
@@ -73,6 +73,7 @@ function GameCard({
           <Text style={styles.summaryPresent}>✅ {summary.present}</Text>
           <Text style={styles.summaryAbsent}>❌ {summary.absent}</Text>
           <Text style={styles.summaryUncertain}>❓ {summary.uncertain}</Text>
+          <Text style={styles.summaryNoResponse}>⬜ {summary.noResponse}</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -85,7 +86,7 @@ export default function GamesScreen() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [summaries, setSummaries] = useState<
-    Record<string, { present: number; absent: number; uncertain: number }>
+    Record<string, { present: number; absent: number; uncertain: number; noResponse: number }>
   >({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -124,6 +125,15 @@ export default function GamesScreen() {
   useEffect(() => {
     loadGames().finally(() => setLoading(false));
   }, [loadGames]);
+
+  // Refresh summaries when navigating back from a game detail page
+  useFocusEffect(
+    useCallback(() => {
+      if (!loading) {
+        loadGames();
+      }
+    }, [loading, loadGames])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -323,6 +333,11 @@ const styles = StyleSheet.create({
   summaryUncertain: {
     fontSize: 14,
     color: '#f39c12',
+    fontWeight: '600',
+  },
+  summaryNoResponse: {
+    fontSize: 14,
+    color: '#999',
     fontWeight: '600',
   },
   emptyText: {

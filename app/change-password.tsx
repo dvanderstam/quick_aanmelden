@@ -10,37 +10,37 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
-import { signUp } from '../src/auth';
+import { changePassword } from '../src/auth';
 import { TEAM_NAME } from '../src/config';
 
-export default function RegisterScreen() {
+export default function ChangePasswordScreen() {
   const router = useRouter();
-  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleRegister = async () => {
-    if (!username) {
-      setError('Vul je gebruikersnaam in.');
-      return;
-    }
+  const handleChange = async () => {
     if (!password) {
-      setError('Kies een wachtwoord.');
+      setError('Vul een nieuw wachtwoord in.');
       return;
     }
     if (password.length < 6) {
       setError('Wachtwoord moet minimaal 6 tekens zijn.');
       return;
     }
+    if (password !== confirmPassword) {
+      setError('Wachtwoorden komen niet overeen.');
+      return;
+    }
 
     setLoading(true);
     setError(null);
     try {
-      await signUp(username, password);
+      await changePassword(password);
       router.replace('/games');
     } catch (err: any) {
-      setError(err.message || 'Activeren mislukt. Probeer het opnieuw.');
+      setError(err.message || 'Wachtwoord wijzigen mislukt.');
     } finally {
       setLoading(false);
     }
@@ -48,34 +48,22 @@ export default function RegisterScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Account activeren', headerShown: false }} />
+      <Stack.Screen options={{ title: 'Wachtwoord wijzigen', headerShown: false }} />
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.header}>
           <Text style={styles.teamName}>{TEAM_NAME}</Text>
-          <Text style={styles.subtitle}>Account activeren</Text>
+          <Text style={styles.subtitle}>Wachtwoord wijzigen</Text>
         </View>
 
         <View style={styles.form}>
           <Text style={styles.hint}>
-            Vul je gebruikersnaam in (je voornaam, lowercase) en kies een wachtwoord.
+            Welkom! Kies een persoonlijk wachtwoord om je account te beveiligen.
           </Text>
 
-          <Text style={styles.label}>Gebruikersnaam</Text>
-          <TextInput
-            style={styles.input}
-            value={username}
-            onChangeText={setUsername}
-            placeholder="bijv. daniel"
-            placeholderTextColor="#999"
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="username"
-          />
-
-          <Text style={styles.label}>Kies een wachtwoord</Text>
+          <Text style={styles.label}>Nieuw wachtwoord</Text>
           <TextInput
             style={styles.input}
             value={password}
@@ -86,28 +74,29 @@ export default function RegisterScreen() {
             autoComplete="new-password"
           />
 
+          <Text style={styles.label}>Herhaal wachtwoord</Text>
+          <TextInput
+            style={styles.input}
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            placeholder="Nogmaals je wachtwoord"
+            placeholderTextColor="#999"
+            secureTextEntry
+            autoComplete="new-password"
+          />
+
           {error && <Text style={styles.error}>{error}</Text>}
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleRegister}
+            onPress={handleChange}
             disabled={loading}
           >
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>Account activeren</Text>
+              <Text style={styles.buttonText}>Opslaan</Text>
             )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.link}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.linkText}>
-              Al een account?{' '}
-              <Text style={styles.linkBold}>Inloggen</Text>
-            </Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -181,18 +170,6 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontSize: 18,
-    fontWeight: 'bold',
-  },
-  link: {
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  linkText: {
-    fontSize: 15,
-    color: '#666',
-  },
-  linkBold: {
-    color: '#1a3a5c',
     fontWeight: 'bold',
   },
 });

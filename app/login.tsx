@@ -15,24 +15,24 @@ import { TEAM_NAME } from '../src/config';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      setError('Vul je e-mail en wachtwoord in.');
+    if (!username || !password) {
+      setError('Vul je gebruikersnaam en wachtwoord in.');
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
-      await signIn(email.trim(), password);
+      await signIn(username, password);
       router.replace('/games');
     } catch (err: any) {
-      setError('Ongeldige inloggegevens. Probeer het opnieuw.');
+      setError(err.message || 'Inloggen mislukt. Probeer het opnieuw.');
     } finally {
       setLoading(false);
     }
@@ -51,16 +51,16 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.form}>
-          <Text style={styles.label}>E-mail</Text>
+          <Text style={styles.label}>Gebruikersnaam</Text>
           <TextInput
             style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="jouw@email.nl"
+            value={username}
+            onChangeText={setUsername}
+            placeholder="bijv. daniel"
             placeholderTextColor="#999"
-            keyboardType="email-address"
             autoCapitalize="none"
-            autoComplete="email"
+            autoCorrect={false}
+            autoComplete="username"
           />
 
           <Text style={styles.label}>Wachtwoord</Text>
@@ -93,8 +93,8 @@ export default function LoginScreen() {
             onPress={() => router.push('/register')}
           >
             <Text style={styles.linkText}>
-              Nog geen account?{' '}
-              <Text style={styles.linkBold}>Registreer</Text>
+              Eerste keer?{' '}
+              <Text style={styles.linkBold}>Activeer je account</Text>
             </Text>
           </TouchableOpacity>
         </View>
