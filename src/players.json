@@ -1,0 +1,18 @@
+{
+  "team": "Quick Amsterdam MS-1",
+  "icsUrl": "https://api.foys.io/competition/public-api/v1/teams/c859ae03-1f85-4f95-a342-32b51a13f146/ics",
+  "players": [
+    { "id": "1",  "name": "René Bos",          "role": "speler" },
+    { "id": "2",  "name": "Viktor Clerc",       "role": "speler" },
+    { "id": "3",  "name": "Bas de Jong",        "role": "admin" },
+    { "id": "4",  "name": "Geert v't Land",     "role": "speler" },
+    { "id": "5",  "name": "Onno Mets",          "role": "speler" },
+    { "id": "6",  "name": "Olaf van Reeden",    "role": "speler" },
+    { "id": "7",  "name": "Wim Rieff",          "role": "speler" },
+    { "id": "8",  "name": "Ramses Serno",       "role": "speler" },
+    { "id": "9",  "name": "Dave Spoelstra",     "role": "speler" },
+    { "id": "10", "name": "Daniël v/d Stam",    "role": "admin" },
+    { "id": "11", "name": "Barry Vis",          "role": "speler" },
+    { "id": "12", "name": "Ralf Vis",           "role": "speler" }
+  ]
+}

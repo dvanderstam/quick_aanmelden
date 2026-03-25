@@ -1,0 +1,19 @@
+[build]
+  command = "npx expo export --platform web"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Proxy ICS feed to avoid CORS issues
+[[redirects]]
+  from = "/api/ics"
+  to = "https://api.foys.io/competition/public-api/v1/teams/c859ae03-1f85-4f95-a342-32b51a13f146/ics"
+  status = 200
+  force = true
+
+# SPA fallback - must be last
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

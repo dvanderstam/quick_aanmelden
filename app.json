@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "knbsb_aanmelden",
-    "slug": "knbsb_aanmelden",
+    "name": "Quick aanmelden wedstrijd",
+    "slug": "quick-aanmelden-wedstrijd",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -25,6 +25,10 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "scheme": "quick-aanmelden",
+    "plugins": [
+      "expo-router"
+    ]
   }
 }
