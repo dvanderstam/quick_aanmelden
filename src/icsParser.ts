@@ -1,5 +1,5 @@
 import { Game } from './types';
-import { ICS_URL, TEAM_NAME } from './config';
+import { TEAM_NAME } from './config';
 
 function parseICSDate(dateStr: string): Date {
   // Format: 20260327T190000Z
@@ -34,8 +34,8 @@ function parseOpponent(summary: string): { opponent: string; isHome: boolean } {
   return { opponent: home, isHome: false };
 }
 
-export async function fetchGames(): Promise<Game[]> {
-  const response = await fetch(ICS_URL);
+export async function fetchGames(icsUrl: string): Promise<Game[]> {
+  const response = await fetch(icsUrl);
   const text = await response.text();
   return parseICS(text);
 }

@@ -7,19 +7,25 @@ import {
   StyleSheet,
   Linking,
   Platform,
+  useWindowDimensions,
+  Image,
 } from 'react-native';
-import { useLocalSearchParams, Stack } from 'expo-router';
+import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AttendanceStatus, Game, Player } from '../../src/types';
 import {
   getAllAttendanceForGame,
   setAttendance,
 } from '../../src/storage';
-import { getCurrentPlayer, canEditPlayer, getAllPlayers } from '../../src/auth';
+import { getCurrentPlayer, canEditPlayer, getPlayersForTeam, signOut } from '../../src/auth';
+import { M3, radii, spacing, typography } from '../../src/theme';
+import { QUICK_LOGO_URL, TEAM_NAME } from '../../src/config';
+import { DisclaimerFooter } from '../../src/DisclaimerFooter';
 
-const STATUS_OPTIONS: { value: AttendanceStatus; label: string; emoji: string }[] = [
-  { value: 'present', label: 'Aanwezig', emoji: '✅' },
-  { value: 'absent', label: 'Afwezig', emoji: '❌' },
-  { value: 'uncertain', label: 'Onzeker', emoji: '❓' },
+const STATUS_OPTIONS: { value: AttendanceStatus; label: string; icon: string; bg: string; active: string }[] = [
+  { value: 'present', label: 'Aanwezig', icon: 'check-circle', bg: M3.successContainer, active: M3.success },
+  { value: 'absent', label: 'Afwezig', icon: 'close-circle', bg: M3.absentContainer, active: M3.absent },
+  { value: 'uncertain', label: 'Onzeker', icon: 'help-circle', bg: M3.warningContainer, active: M3.warning },
 ];
 
 function formatFullDate(date: Date): string {
@@ -42,7 +48,10 @@ function openMaps(address: string) {
 }
 
 export default function GameDetailScreen() {
-  const params = useLocalSearchParams<{ id: string; data: string }>();
+  const router = useRouter();
+  const params = useLocalSearchParams<{ id: string; data: string; teamId: string }>();
+  const { width } = useWindowDimensions();
+  const contentWidth = Math.min(width, 600);
   const game: Game | null = params.data
     ? (() => {
         const parsed = JSON.parse(params.data);
@@ -55,18 +64,19 @@ export default function GameDetailScreen() {
     : null;
 
   const gameId = params.id;
+  const teamId = params.teamId || 'ms1';
   const [attendance, setAttendanceState] = useState<Record<number, AttendanceStatus>>({});
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
 
   const loadData = useCallback(async () => {
     if (!gameId) return;
-    const [fetchedPlayers] = await Promise.all([getAllPlayers()]);
+    const fetchedPlayers = await getPlayersForTeam(teamId);
     setPlayers(fetchedPlayers);
     const playerIds = fetchedPlayers.map((p) => p.id);
     const result = await getAllAttendanceForGame(gameId, playerIds);
     setAttendanceState(result);
-  }, [gameId]);
+  }, [gameId, teamId]);
 
   useEffect(() => {
     loadData();
@@ -90,6 +100,11 @@ export default function GameDetailScreen() {
     setAttendanceState((prev) => ({ ...prev, [playerId]: newStatus }));
   };
 
+  const handleLogout = async () => {
+    await signOut();
+    router.replace('/login');
+  };
+
   if (!game) {
     return (
       <View style={styles.center}>
@@ -104,208 +119,292 @@ export default function GameDetailScreen() {
 
   return (
     <>
-      <Stack.Screen
-        options={{ title: `vs ${game.opponent}` }}
-      />
-      <FlatList
-        style={styles.container}
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <View style={styles.matchInfo}>
-              <View
-                style={[
-                  styles.badge,
-                  game.isHome ? styles.badgeHome : styles.badgeAway,
-                ]}
-              >
-                <Text style={styles.badgeText}>
-                  {game.isHome ? 'THUISWEDSTRIJD' : 'UITWEDSTRIJD'}
-                </Text>
-              </View>
-              <Text style={styles.opponentText}>vs {game.opponent}</Text>
-              <Text style={styles.dateText}>{formatFullDate(game.startDate)}</Text>
-
-              <TouchableOpacity
-                style={styles.locationButton}
-                onPress={() => openMaps(game.location)}
-              >
-                <Text style={styles.locationText}>📍 {game.location}</Text>
-                <Text style={styles.locationHint}>Tik om te navigeren</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.summaryBar}>
-              <View style={[styles.summaryItem, styles.summaryGreen]}>
-                <Text style={styles.summaryNumber}>{presentCount}</Text>
-                <Text style={styles.summaryLabel}>Aanwezig</Text>
-              </View>
-              <View style={[styles.summaryItem, styles.summaryRed]}>
-                <Text style={styles.summaryNumber}>{absentCount}</Text>
-                <Text style={styles.summaryLabel}>Afwezig</Text>
-              </View>
-              <View style={[styles.summaryItem, styles.summaryOrange]}>
-                <Text style={styles.summaryNumber}>{uncertainCount}</Text>
-                <Text style={styles.summaryLabel}>Onzeker</Text>
-              </View>
-            </View>
-
-            <Text style={styles.sectionTitle}>Spelers</Text>
-          </View>
-        }
-        data={players}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={({ item: player }) => {
-          const status = attendance[player.id] || null;
-          const editable = currentPlayer ? canEditPlayer(currentPlayer, player.id) : false;
-          return (
-            <View style={[styles.playerRow, !editable && styles.playerRowDisabled]}>
-              <View style={styles.playerInfo}>
-                <View style={styles.avatarBadge}>
-                  <Text style={styles.avatarText}>
-                    {player.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()}
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={styles.hero}>
+        <TouchableOpacity onPress={() => router.replace('/games')} style={styles.homeBtn}>
+          <MaterialCommunityIcons name="home" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
+          <Text style={styles.logoutText}>
+            {currentPlayer?.name?.split(' ')[0] ?? ''}
+          </Text>
+          <MaterialCommunityIcons name="logout" size={18} color="#FFFFFF" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.replace('/games')}>
+          <Image
+            source={{ uri: QUICK_LOGO_URL }}
+            style={styles.heroLogo}
+            resizeMode="contain"
+          />
+        </TouchableOpacity>
+        <Text style={styles.heroTitle}>{TEAM_NAME}</Text>
+        <Text style={styles.heroSubtitle}>Aanmelden voor wedstrijden</Text>
+      </View>
+      <View style={styles.wrapper}>
+        <FlatList
+          style={[styles.container, { maxWidth: contentWidth, alignSelf: 'center' as const, width: '100%' as unknown as number }]}
+          ListHeaderComponent={
+            <View style={styles.header}>
+              <View style={styles.matchInfo}>
+                <View
+                  style={[
+                    styles.badge,
+                    game.isHome ? styles.badgeHome : styles.badgeAway,
+                  ]}
+                >
+                  <Text style={styles.badgeText}>
+                    {game.isHome ? 'THUISWEDSTRIJD' : 'UITWEDSTRIJD'}
                   </Text>
                 </View>
-                <Text style={styles.playerName}>{player.name}</Text>
+                <Text style={styles.opponentText}>vs {game.opponent}</Text>
+                <Text style={styles.dateText}>{formatFullDate(game.startDate)}</Text>
+
+                <TouchableOpacity
+                  style={styles.locationButton}
+                  onPress={() => openMaps(game.location)}
+                >
+                  <Text style={styles.locationText}><MaterialCommunityIcons name="map-marker" size={14} color={M3.onPrimaryContainer} /> {game.location}</Text>
+                  <Text style={styles.locationHint}>Tik om te navigeren →</Text>
+                </TouchableOpacity>
               </View>
-              <View style={styles.statusButtons}>
-                {STATUS_OPTIONS.map((opt) => (
-                  <TouchableOpacity
-                    key={opt.value}
-                    disabled={!editable}
-                    style={[
-                      styles.statusBtn,
-                      status === opt.value && styles.statusBtnActive,
-                      status === opt.value &&
-                        opt.value === 'present' && styles.statusBtnPresent,
-                      status === opt.value &&
-                        opt.value === 'absent' && styles.statusBtnAbsent,
-                      status === opt.value &&
-                        opt.value === 'uncertain' && styles.statusBtnUncertain,
-                      !editable && styles.statusBtnDisabled,
-                    ]}
-                    onPress={() => handleSetStatus(player.id, opt.value)}
-                  >
-                    <Text style={[styles.statusEmoji, !editable && styles.statusEmojiDisabled]}>{opt.emoji}</Text>
-                  </TouchableOpacity>
-                ))}
+
+              <View style={styles.summaryBar}>
+                <View style={[styles.summaryItem, { backgroundColor: M3.successContainer }]}>
+                  <Text style={[styles.summaryNumber, { color: M3.success }]}>{presentCount}</Text>
+                  <Text style={styles.summaryLabel}>Aanwezig</Text>
+                </View>
+                <View style={[styles.summaryItem, { backgroundColor: M3.absentContainer }]}>
+                  <Text style={[styles.summaryNumber, { color: M3.absent }]}>{absentCount}</Text>
+                  <Text style={styles.summaryLabel}>Afwezig</Text>
+                </View>
+                <View style={[styles.summaryItem, { backgroundColor: M3.warningContainer }]}>
+                  <Text style={[styles.summaryNumber, { color: M3.warning }]}>{uncertainCount}</Text>
+                  <Text style={styles.summaryLabel}>Onzeker</Text>
+                </View>
               </View>
+
+              <Text style={styles.sectionTitle}>Spelers</Text>
             </View>
-          );
-        }}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-      />
+          }
+          data={players}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={({ item: player }) => {
+            const status = attendance[player.id] || null;
+            const editable = currentPlayer ? canEditPlayer(currentPlayer, player.id) : false;
+            return (
+              <View style={[styles.playerRow, !editable && styles.playerRowDisabled]}>
+                <View style={styles.playerInfo}>
+                  <View style={[
+                    styles.avatarBadge,
+                    status === 'present' && { backgroundColor: M3.success },
+                    status === 'absent' && { backgroundColor: M3.absent },
+                    status === 'uncertain' && { backgroundColor: M3.warning },
+                  ]}>
+                    <Text style={styles.avatarText}>
+                      {player.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()}
+                    </Text>
+                  </View>
+                  <View>
+                    <Text style={styles.playerName}>{player.name}</Text>
+                    {status && (
+                      <Text style={[
+                        styles.playerStatus,
+                        status === 'present' && { color: M3.success },
+                        status === 'absent' && { color: M3.absent },
+                        status === 'uncertain' && { color: M3.warning },
+                      ]}>
+                        {STATUS_OPTIONS.find(o => o.value === status)?.label}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.statusButtons}>
+                  {STATUS_OPTIONS.map((opt) => (
+                    <TouchableOpacity
+                      key={opt.value}
+                      disabled={!editable}
+                      style={[
+                        styles.statusBtn,
+                        status === opt.value && { backgroundColor: opt.bg, borderColor: opt.active },
+                        !editable && styles.statusBtnDisabled,
+                      ]}
+                      onPress={() => handleSetStatus(player.id, opt.value)}
+                    >
+                      <MaterialCommunityIcons
+                        name={opt.icon as any}
+                        size={20}
+                        color={status === opt.value ? opt.active : M3.onSurfaceVariant}
+                        style={[!editable && styles.statusEmojiDisabled]}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            );
+          }}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          ListFooterComponent={<DisclaimerFooter />}
+        />
+      </View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  hero: {
+    backgroundColor: '#1E5FA0',
+    paddingTop: 10,
+    paddingBottom: 10,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+  },
+  heroLogo: {
+    width: 160,
+    height: 160,
+    marginBottom: spacing.xs,
+  },
+  heroTitle: {
+    ...typography.titleMedium,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  heroSubtitle: {
+    ...typography.labelSmall,
+    color: '#FFFFFF',
+    opacity: 0.7,
+  },
+  homeBtn: {
+    position: 'absolute',
+    top: 10,
+    left: spacing.md,
+    zIndex: 1,
+  },
+  logoutBtn: {
+    position: 'absolute',
+    top: 10,
+    right: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    zIndex: 1,
+  },
+  logoutText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  wrapper: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f0f2f5',
   },
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: M3.surface,
   },
   header: {
-    paddingBottom: 8,
+    paddingBottom: spacing.sm,
   },
   matchInfo: {
-    backgroundColor: '#1a3a5c',
-    padding: 20,
+    backgroundColor: M3.primaryContainer,
+    padding: spacing.lg,
     alignItems: 'center',
+    borderBottomLeftRadius: radii.xl,
+    borderBottomRightRadius: radii.xl,
   },
   badge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 4,
-    marginBottom: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+    marginBottom: spacing.md,
   },
   badgeHome: {
-    backgroundColor: '#27ae60',
+    backgroundColor: M3.successContainer,
   },
   badgeAway: {
-    backgroundColor: '#e67e22',
+    backgroundColor: M3.warningContainer,
   },
   badgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
+    fontSize: 11,
+    fontWeight: '700',
     letterSpacing: 1,
+    color: M3.onSurface,
   },
   opponentText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 8,
+    ...typography.headlineMedium,
+    fontWeight: '700',
+    color: M3.onPrimaryContainer,
+    marginBottom: spacing.sm,
   },
   dateText: {
-    fontSize: 16,
-    color: '#b0c4de',
-    marginBottom: 12,
+    fontSize: 15,
+    color: M3.onPrimaryContainer,
+    opacity: 0.7,
+    marginBottom: spacing.md,
   },
   locationButton: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    padding: 12,
-    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.06)',
+    padding: spacing.md,
+    borderRadius: radii.md,
     alignItems: 'center',
     width: '100%',
   },
   locationText: {
-    color: '#fff',
+    color: M3.onPrimaryContainer,
     fontSize: 14,
+    fontWeight: '500',
   },
   locationHint: {
-    color: '#b0c4de',
+    color: M3.primary,
     fontSize: 12,
-    marginTop: 2,
+    marginTop: spacing.xs,
+    fontWeight: '500',
   },
   summaryBar: {
     flexDirection: 'row',
-    margin: 16,
-    gap: 8,
+    margin: spacing.md,
+    gap: spacing.sm,
   },
   summaryItem: {
     flex: 1,
-    padding: 12,
-    borderRadius: 8,
+    padding: spacing.md,
+    borderRadius: radii.lg,
     alignItems: 'center',
   },
-  summaryGreen: {
-    backgroundColor: '#e8f5e9',
-  },
-  summaryRed: {
-    backgroundColor: '#fce4ec',
-  },
-  summaryOrange: {
-    backgroundColor: '#fff8e1',
-  },
   summaryNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: -0.5,
   },
   summaryLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
+    ...typography.labelSmall,
+    color: M3.onSurfaceVariant,
+    marginTop: spacing.xs,
+    textTransform: 'uppercase',
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1a3a5c',
-    paddingHorizontal: 16,
-    paddingBottom: 8,
+    ...typography.labelLarge,
+    color: M3.onSurfaceVariant,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+    textTransform: 'uppercase',
   },
   playerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    padding: 12,
-    borderRadius: 8,
+    backgroundColor: M3.surfaceContainer,
+    marginHorizontal: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.lg,
   },
   playerInfo: {
     flexDirection: 'row',
@@ -313,57 +412,45 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   avatarBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#1a3a5c',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  avatarText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  playerName: {
-    fontSize: 16,
-    color: '#333',
-  },
-  statusButtons: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  statusBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: M3.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.md,
+  },
+  avatarText: {
+    color: M3.onPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  playerName: {
+    ...typography.bodyLarge,
+    fontWeight: '500',
+    color: M3.onSurface,
+  },
+  playerStatus: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  statusButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  statusBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: M3.surfaceContainerHigh,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  statusBtnActive: {
-    borderWidth: 2,
-  },
-  statusBtnPresent: {
-    backgroundColor: '#e8f5e9',
-    borderColor: '#27ae60',
-  },
-  statusBtnAbsent: {
-    backgroundColor: '#fce4ec',
-    borderColor: '#c0392b',
-  },
-  statusBtnUncertain: {
-    backgroundColor: '#fff8e1',
-    borderColor: '#f39c12',
-  },
-  statusEmoji: {
-    fontSize: 18,
-  },
   playerRowDisabled: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   statusBtnDisabled: {
     opacity: 0.4,
@@ -372,6 +459,6 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   separator: {
-    height: 4,
+    height: spacing.sm,
   },
 });

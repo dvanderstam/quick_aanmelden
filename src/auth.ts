@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { Player } from './types';
+import { DEFAULT_PASSWORD } from './config';
 
 const EMAIL_DOMAIN = 'quick.local';
 
@@ -66,7 +67,15 @@ export async function getCurrentPlayer(): Promise<Player | null> {
     .eq('auth_user_id', user.id)
     .single();
 
-  return player || null;
+  if (!player) return null;
+
+  // Fetch team memberships
+  const { data: teams } = await supabase
+    .from('player_teams')
+    .select('team_id')
+    .eq('player_id', player.id);
+
+  return { ...player, team_ids: teams?.map((t: { team_id: string }) => t.team_id) || [] };
 }
 
 export async function getAllPlayers(): Promise<Player[]> {
@@ -79,8 +88,28 @@ export async function getAllPlayers(): Promise<Player[]> {
   return data || [];
 }
 
+export async function getPlayersForTeam(teamId: string): Promise<Player[]> {
+  const { data, error } = await supabase
+    .from('player_teams')
+    .select('player_id')
+    .eq('team_id', teamId);
+
+  if (error) throw error;
+  const playerIds = data?.map((r: { player_id: number }) => r.player_id) || [];
+  if (playerIds.length === 0) return [];
+
+  const { data: players, error: pError } = await supabase
+    .from('players')
+    .select('*')
+    .in('id', playerIds)
+    .order('name');
+
+  if (pError) throw pError;
+  return players || [];
+}
+
 export function canEditPlayer(currentPlayer: Player, targetPlayerId: number): boolean {
-  if (currentPlayer.role === 'admin') return true;
+  if (currentPlayer.role === 'admin' || currentPlayer.role === 'teamAdmin') return true;
   return currentPlayer.id === targetPlayerId;
 }
 
@@ -96,4 +125,48 @@ export async function changePassword(newPassword: string): Promise<void> {
       .update({ must_change_password: false })
       .eq('auth_user_id', user.id);
   }
+}
+
+export async function acceptDisclaimer(): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    await supabase
+      .from('players')
+      .update({ disclaimer_accepted: true })
+      .eq('auth_user_id', user.id);
+  }
+}
+
+export async function resetForgottenPassword(username: string, newPassword: string): Promise<void> {
+  const email = usernameToEmail(username);
+
+  // Try to sign in with the default password
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    email,
+    password: DEFAULT_PASSWORD,
+  });
+
+  if (signInError) {
+    throw new Error(
+      'Wachtwoord resetten is niet mogelijk. Neem contact op met een beheerder.'
+    );
+  }
+
+  // Update to the new password
+  const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+  if (updateError) {
+    await supabase.auth.signOut();
+    throw new Error('Wachtwoord wijzigen mislukt: ' + updateError.message);
+  }
+
+  // Mark password as changed
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    await supabase
+      .from('players')
+      .update({ must_change_password: false })
+      .eq('auth_user_id', user.id);
+  }
+
+  await supabase.auth.signOut();
 }

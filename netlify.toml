@@ -5,10 +5,16 @@
 [build.environment]
   NODE_VERSION = "20"
 
-# Proxy ICS feed to avoid CORS issues
+# Proxy ICS feeds to avoid CORS issues
 [[redirects]]
-  from = "/api/ics"
+  from = "/api/ics/ms1"
   to = "https://api.foys.io/competition/public-api/v1/teams/c19eccfc-506d-42df-a579-28bfe45aa3a6/ics"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/ics/ms3"
+  to = "https://api.foys.io/competition/public-api/v1/teams/7852aa94-43c5-4f2d-b4d9-85fd46d25ca0/ics"
   status = 200
   force = true
 

@@ -10,7 +10,7 @@ export interface Game {
 
 export type AttendanceStatus = 'present' | 'absent' | 'uncertain' | null;
 
-export type PlayerRole = 'admin' | 'speler';
+export type PlayerRole = 'admin' | 'teamAdmin' | 'speler';
 
 export interface Player {
   id: number;
@@ -19,4 +19,6 @@ export interface Player {
   role: PlayerRole;
   auth_user_id: string | null;
   must_change_password: boolean;
+  disclaimer_accepted?: boolean;
+  team_ids?: string[];
 }

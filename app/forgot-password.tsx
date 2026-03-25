@@ -12,27 +12,33 @@ import {
   Image,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
-import { changePassword } from '../src/auth';
+import { resetForgottenPassword } from '../src/auth';
 import { TEAM_NAME, QUICK_LOGO_URL } from '../src/config';
 import { M3, radii, spacing, typography } from '../src/theme';
 
-export default function ChangePasswordScreen() {
+export default function ForgotPasswordScreen() {
   const router = useRouter();
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
-  const handleChange = async () => {
-    if (!password) {
-      setError('Vul een nieuw wachtwoord in.');
+  const handleReset = async () => {
+    if (!username) {
+      setError('Vul je gebruikersnaam in.');
       return;
     }
-    if (password.length < 6) {
+    if (!newPassword) {
+      setError('Kies een nieuw wachtwoord.');
+      return;
+    }
+    if (newPassword.length < 6) {
       setError('Wachtwoord moet minimaal 6 tekens zijn.');
       return;
     }
-    if (password !== confirmPassword) {
+    if (newPassword !== confirmPassword) {
       setError('Wachtwoorden komen niet overeen.');
       return;
     }
@@ -40,10 +46,10 @@ export default function ChangePasswordScreen() {
     setLoading(true);
     setError(null);
     try {
-      await changePassword(password);
-      router.replace('/games');
+      await resetForgottenPassword(username, newPassword);
+      setSuccess(true);
     } catch (err: any) {
-      setError(err.message || 'Wachtwoord wijzigen mislukt.');
+      setError(err.message || 'Wachtwoord resetten mislukt.');
     } finally {
       setLoading(false);
     }
@@ -52,9 +58,41 @@ export default function ChangePasswordScreen() {
   const { width } = useWindowDimensions();
   const contentWidth = Math.min(width, 480);
 
+  if (success) {
+    return (
+      <>
+        <Stack.Screen options={{ title: 'Wachtwoord herstellen', headerShown: false }} />
+        <View style={styles.container}>
+          <View style={styles.hero}>
+            <Image
+              source={{ uri: QUICK_LOGO_URL }}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+            <Text style={styles.teamName}>{TEAM_NAME}</Text>
+          </View>
+          <View style={[styles.formCard, { width: contentWidth, alignSelf: 'center' }]}>
+            <View style={styles.successChip}>
+              <Text style={styles.successText}>
+                Wachtwoord is gewijzigd! Je kunt nu inloggen.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => router.replace('/login')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.buttonText}>Naar inloggen</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </>
+    );
+  }
+
   return (
     <>
-      <Stack.Screen options={{ title: 'Wachtwoord wijzigen', headerShown: false }} />
+      <Stack.Screen options={{ title: 'Wachtwoord herstellen', headerShown: false }} />
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -66,22 +104,30 @@ export default function ChangePasswordScreen() {
             resizeMode="contain"
           />
           <Text style={styles.teamName}>{TEAM_NAME}</Text>
-          <Text style={styles.subtitle}>Wachtwoord wijzigen</Text>
+          <Text style={styles.subtitle}>Wachtwoord herstellen</Text>
         </View>
 
         <View style={[styles.formCard, { width: contentWidth, alignSelf: 'center' }]}>
-          <View style={styles.hintChip}>
-            <Text style={styles.hintText}>
-              Welkom! Dit is je eerste keer aanmelden. Kies hieronder een persoonlijk wachtwoord.
-            </Text>
+          <Text style={styles.label}>Gebruikersnaam</Text>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              value={username}
+              onChangeText={setUsername}
+              placeholder="bijv. daniel"
+              placeholderTextColor={M3.outline}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="username"
+            />
           </View>
 
           <Text style={styles.label}>Nieuw wachtwoord</Text>
           <View style={styles.inputContainer}>
             <TextInput
               style={styles.input}
-              value={password}
-              onChangeText={setPassword}
+              value={newPassword}
+              onChangeText={setNewPassword}
               placeholder="Minimaal 6 tekens"
               placeholderTextColor={M3.outline}
               secureTextEntry
@@ -89,13 +135,13 @@ export default function ChangePasswordScreen() {
             />
           </View>
 
-          <Text style={styles.label}>Herhaal wachtwoord</Text>
+          <Text style={styles.label}>Bevestig wachtwoord</Text>
           <View style={styles.inputContainer}>
             <TextInput
               style={styles.input}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
-              placeholder="Nogmaals je wachtwoord"
+              placeholder="Herhaal wachtwoord"
               placeholderTextColor={M3.outline}
               secureTextEntry
               autoComplete="new-password"
@@ -110,15 +156,25 @@ export default function ChangePasswordScreen() {
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleChange}
+            onPress={handleReset}
             disabled={loading}
             activeOpacity={0.8}
           >
             {loading ? (
               <ActivityIndicator color={M3.onPrimary} />
             ) : (
-              <Text style={styles.buttonText}>Opslaan</Text>
+              <Text style={styles.buttonText}>Wachtwoord opslaan</Text>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.link}
+            onPress={() => router.push('/login')}
+          >
+            <Text style={styles.linkText}>
+              Terug naar{' '}
+              <Text style={styles.linkBold}>inloggen</Text>
+            </Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -137,10 +193,6 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     paddingHorizontal: spacing.lg,
     alignItems: 'center',
-  },
-  logo: {
-    fontSize: 48,
-    marginBottom: spacing.sm,
   },
   logoImage: {
     width: 160,
@@ -161,18 +213,6 @@ const styles = StyleSheet.create({
   formCard: {
     padding: spacing.lg,
     marginTop: -spacing.md,
-  },
-  hintChip: {
-    backgroundColor: M3.secondaryContainer,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: radii.full,
-    marginBottom: spacing.sm,
-  },
-  hintText: {
-    fontSize: 13,
-    color: M3.onSecondaryContainer,
-    textAlign: 'center',
   },
   label: {
     ...typography.labelMedium,
@@ -208,6 +248,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
+  successChip: {
+    backgroundColor: M3.successContainer,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.full,
+    marginTop: spacing.md,
+    alignItems: 'center',
+  },
+  successText: {
+    color: M3.success,
+    fontSize: 13,
+    fontWeight: '500',
+  },
   button: {
     backgroundColor: M3.primary,
     height: 56,
@@ -224,5 +277,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     letterSpacing: 0.1,
+  },
+  link: {
+    alignItems: 'center',
+    marginTop: spacing.lg,
+  },
+  linkText: {
+    fontSize: 14,
+    color: M3.onSurfaceVariant,
+  },
+  linkBold: {
+    color: M3.primary,
+    fontWeight: '600',
   },
 });

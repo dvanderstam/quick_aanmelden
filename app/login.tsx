@@ -8,10 +8,13 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
+  Image,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { signIn } from '../src/auth';
-import { TEAM_NAME } from '../src/config';
+import { TEAM_NAME, QUICK_LOGO_URL } from '../src/config';
+import { M3, radii, spacing, typography } from '../src/theme';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -38,6 +41,9 @@ export default function LoginScreen() {
     }
   };
 
+  const { width } = useWindowDimensions();
+  const contentWidth = Math.min(width, 480);
+
   return (
     <>
       <Stack.Screen options={{ title: 'Inloggen', headerShown: false }} />
@@ -45,44 +51,58 @@ export default function LoginScreen() {
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.header}>
+        <View style={styles.hero}>
+          <Image
+            source={{ uri: QUICK_LOGO_URL }}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
           <Text style={styles.teamName}>{TEAM_NAME}</Text>
-          <Text style={styles.subtitle}>Wedstrijd aanmelden</Text>
+          <Text style={styles.subtitle}>Aanmelden voor wedstrijden</Text>
         </View>
 
-        <View style={styles.form}>
+        <View style={[styles.formCard, { width: contentWidth, alignSelf: 'center' }]}>
           <Text style={styles.label}>Gebruikersnaam</Text>
-          <TextInput
-            style={styles.input}
-            value={username}
-            onChangeText={setUsername}
-            placeholder="bijv. daniel"
-            placeholderTextColor="#999"
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="username"
-          />
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              value={username}
+              onChangeText={setUsername}
+              placeholder="bijv. daniel"
+              placeholderTextColor={M3.outline}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="username"
+            />
+          </View>
 
           <Text style={styles.label}>Wachtwoord</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            placeholder="••••••••"
-            placeholderTextColor="#999"
-            secureTextEntry
-            autoComplete="password"
-          />
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="••••••••"
+              placeholderTextColor={M3.outline}
+              secureTextEntry
+              autoComplete="password"
+            />
+          </View>
 
-          {error && <Text style={styles.error}>{error}</Text>}
+          {error && (
+            <View style={styles.errorChip}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleLogin}
             disabled={loading}
+            activeOpacity={0.8}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={M3.onPrimary} />
             ) : (
               <Text style={styles.buttonText}>Inloggen</Text>
             )}
@@ -97,6 +117,16 @@ export default function LoginScreen() {
               <Text style={styles.linkBold}>Activeer je account</Text>
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.link}
+            onPress={() => router.push('/forgot-password')}
+          >
+            <Text style={styles.linkText}>
+              Wachtwoord vergeten?{' '}
+              <Text style={styles.linkBold}>Herstel je wachtwoord</Text>
+            </Text>
+          </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
     </>
@@ -106,75 +136,100 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f0f2f5',
+    backgroundColor: M3.surface,
   },
-  header: {
-    backgroundColor: '#1a3a5c',
-    paddingTop: 80,
-    paddingBottom: 32,
-    paddingHorizontal: 20,
+  hero: {
+    backgroundColor: '#1E5FA0',
+    paddingTop: 72,
+    paddingBottom: 40,
+    paddingHorizontal: spacing.lg,
     alignItems: 'center',
+  },
+  logo: {
+    fontSize: 48,
+    marginBottom: spacing.sm,
+  },
+  logoImage: {
+    width: 160,
+    height: 160,
+    marginBottom: spacing.sm,
   },
   teamName: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
+    ...typography.headlineMedium,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: spacing.xs,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#b0c4de',
-  },
-  form: {
-    padding: 24,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 6,
-    marginTop: 16,
-  },
-  input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 14,
-    fontSize: 16,
-    color: '#333',
-  },
-  error: {
-    color: '#c0392b',
-    fontSize: 14,
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  button: {
-    backgroundColor: '#1a3a5c',
-    paddingVertical: 16,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 24,
-  },
-  buttonDisabled: {
+    ...typography.titleMedium,
+    color: '#FFFFFF',
     opacity: 0.7,
   },
+  formCard: {
+    padding: spacing.lg,
+    marginTop: -spacing.md,
+  },
+  label: {
+    ...typography.labelMedium,
+    color: M3.onSurfaceVariant,
+    marginBottom: spacing.xs,
+    marginTop: spacing.md,
+    textTransform: 'uppercase',
+  },
+  inputContainer: {
+    backgroundColor: M3.surfaceContainerHigh,
+    borderRadius: radii.xs,
+    borderWidth: 1,
+    borderColor: M3.outlineVariant,
+    overflow: 'hidden',
+  },
+  input: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: 16,
+    color: M3.onSurface,
+    lineHeight: 24,
+  },
+  errorChip: {
+    backgroundColor: M3.absentContainer,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.full,
+    marginTop: spacing.md,
+    alignItems: 'center',
+  },
+  errorText: {
+    color: M3.absent,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  button: {
+    backgroundColor: M3.primary,
+    height: 56,
+    borderRadius: radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.lg,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
   buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: M3.onPrimary,
+    fontSize: 14,
+    fontWeight: '500',
+    letterSpacing: 0.1,
   },
   link: {
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: spacing.lg,
   },
   linkText: {
-    fontSize: 15,
-    color: '#666',
+    fontSize: 14,
+    color: M3.onSurfaceVariant,
   },
   linkBold: {
-    color: '#1a3a5c',
-    fontWeight: 'bold',
+    color: M3.primary,
+    fontWeight: '600',
   },
 });
