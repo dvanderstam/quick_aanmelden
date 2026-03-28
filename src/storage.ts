@@ -28,14 +28,19 @@ export async function setAttendance(
       .eq('game_id', gameId)
       .eq('player_id', playerId);
   } else {
+    // Als status 'present' is en needsReplacement niet true, clear is_substitute
+    const update: any = {
+      game_id: gameId,
+      player_id: playerId,
+      status,
+      updated_at: new Date().toISOString(),
+      ...(needsReplacement !== undefined && { needs_replacement: needsReplacement }),
+    };
+    if (status === 'present' && needsReplacement !== true) {
+      update.is_substitute = false;
+    }
     await supabase.from('attendance').upsert(
-      {
-        game_id: gameId,
-        player_id: playerId,
-        status,
-        updated_at: new Date().toISOString(),
-        ...(needsReplacement !== undefined && { needs_replacement: needsReplacement }),
-      },
+      update,
       { onConflict: 'game_id,player_id' }
     );
   }
