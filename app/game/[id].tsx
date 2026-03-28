@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,9 @@ import {
   Image,
   Alert,
   Pressable,
+  Modal,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -122,6 +125,12 @@ export default function GameDetailScreen() {
     const shouldFlag = next === 'absent' && absentCount >= 3 && teamId === 'ms1';
     const clearFlag = next !== 'absent';
 
+    // Als speler zichzelf weer op aanwezig zet, verwijder substitute label
+    if (next === 'present' && substitutes[playerId]) {
+      // markSubstitute accepteert geen 3e argument, clearing gebeurt via setAttendance
+      setSubstitutes((prev) => ({ ...prev, [playerId]: false }));
+    }
+
     await setAttendance(gameId, playerId, next, shouldFlag ? true : clearFlag ? false : undefined);
     const now = new Date().toISOString();
     setAttendanceState(updated);
@@ -139,6 +148,11 @@ export default function GameDetailScreen() {
     const absentCount = Object.values(updated).filter((s) => s === 'absent').length;
     const shouldFlag = newStatus === 'absent' && absentCount >= 3 && teamId === 'ms1';
     const clearFlag = newStatus !== 'absent';
+
+    // Als speler zichzelf weer op aanwezig zet, verwijder substitute label
+    if (newStatus === 'present' && substitutes[playerId]) {
+      setSubstitutes((prev) => ({ ...prev, [playerId]: false }));
+    }
 
     await setAttendance(gameId, playerId, newStatus, shouldFlag ? true : clearFlag ? false : undefined);
     const now = new Date().toISOString();
@@ -168,6 +182,47 @@ export default function GameDetailScreen() {
     router.replace('/login');
   };
 
+  const sheetTranslateY = useRef(new Animated.Value(0)).current;
+  const closeSheet = useCallback(() => {
+    setPopoverPlayerId(null);
+    sheetTranslateY.setValue(0);
+  }, [sheetTranslateY]);
+
+  const sheetPanResponder = useMemo(
+    () => PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        if (!(width < 520) || popoverPlayerId === null) return false;
+        return gestureState.dy > 8 && Math.abs(gestureState.dx) < 24;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          sheetTranslateY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 120 || gestureState.vy > 1.2) {
+          closeSheet();
+          return;
+        }
+        Animated.spring(sheetTranslateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 120,
+          friction: 12,
+        }).start();
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(sheetTranslateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 120,
+          friction: 12,
+        }).start();
+      },
+    }),
+    [closeSheet, popoverPlayerId, sheetTranslateY, width]
+  );
+
   if (!game) {
     return (
       <View style={styles.center}>
@@ -179,6 +234,8 @@ export default function GameDetailScreen() {
   const presentCount = Object.values(attendance).filter((s) => s === 'present').length;
   const absentCount = Object.values(attendance).filter((s) => s === 'absent').length;
   const uncertainCount = Object.values(attendance).filter((s) => s === 'uncertain').length;
+  const isSmallScreen = width < 520;
+  const popoverPlayer = players.find((p) => p.id === popoverPlayerId) ?? null;
 
   return (
     <>
@@ -276,25 +333,6 @@ export default function GameDetailScreen() {
                         <MaterialCommunityIcons name="alert" size={14} color="#FFFFFF" />
                       </TouchableOpacity>
                     )}
-                    {popoverPlayerId === player.id && (
-                      <>
-                        <Pressable
-                          style={styles.popoverOverlay}
-                          onPress={() => setPopoverPlayerId(null)}
-                        />
-                        <View style={styles.popover}>
-                          <Text style={styles.popoverText}>Vervanger regelen</Text>
-                          {currentPlayer && (currentPlayer.role === 'admin' || currentPlayer.role === 'teamAdmin') && (
-                            <TouchableOpacity
-                              style={styles.popoverBtn}
-                              onPress={() => handleDismissReplacement(player.id)}
-                            >
-                              <Text style={styles.popoverBtnText}>Geregeld ✓</Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      </>
-                    )}
                   </View>
                   <View>
                     <Text style={styles.playerName}>
@@ -355,6 +393,42 @@ export default function GameDetailScreen() {
           ListFooterComponent={<DisclaimerFooter />}
         />
       </View>
+      <Modal
+        transparent
+        animationType="fade"
+        visible={popoverPlayerId !== null}
+        onRequestClose={closeSheet}
+      >
+        <View style={[styles.modalBackdrop, isSmallScreen && styles.modalBackdropBottom]}>
+          <Pressable style={styles.modalBackdropTapZone} onPress={closeSheet} />
+          <Animated.View
+            style={[
+              styles.modalCard,
+              isSmallScreen && styles.modalCardBottomSheet,
+              isSmallScreen && { transform: [{ translateY: sheetTranslateY }] },
+            ]}
+            {...(isSmallScreen ? sheetPanResponder.panHandlers : {})}
+          >
+            {isSmallScreen && <View style={styles.sheetHandle} />}
+            <Text style={styles.popoverText}>Vervanger regelen</Text>
+            {popoverPlayer?.name && (
+              <Text style={styles.modalPlayerName}>{popoverPlayer.name}</Text>
+            )}
+            {currentPlayer && (currentPlayer.role === 'admin' || currentPlayer.role === 'teamAdmin') ? (
+              <TouchableOpacity
+                style={styles.popoverBtn}
+                onPress={() => {
+                  if (popoverPlayerId !== null) handleDismissReplacement(popoverPlayerId);
+                }}
+              >
+                <Text style={styles.popoverBtnText}>Geregeld ✓</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.modalHint}>Alleen teamadmin of admin kan dit afronden.</Text>
+            )}
+          </Animated.View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -545,47 +619,85 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: M3.surfaceContainer,
   },
-  popover: {
-    position: 'absolute',
-    top: -8,
-    left: 48,
-    backgroundColor: M3.onSurface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radii.md,
-    zIndex: 11,
-    minWidth: 160,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
   },
-  popoverOverlay: {
-    position: 'fixed' as any,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 10,
+  modalBackdropTapZone: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalBackdropBottom: {
+    justifyContent: 'flex-end',
+    paddingHorizontal: 0,
+    paddingBottom: 0,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: M3.onSurface,
+    borderRadius: radii.xl,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xl,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 14,
+  },
+  modalCardBottomSheet: {
+    maxWidth: '100%',
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 44,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.45)',
+    marginBottom: spacing.md,
   },
   popoverText: {
     color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  modalPlayerName: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '500',
+    textAlign: 'center',
+    opacity: 0.9,
   },
   popoverBtn: {
-    marginTop: spacing.sm,
+    marginTop: spacing.md,
     backgroundColor: M3.success,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.md,
-    borderRadius: radii.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderRadius: radii.md,
     alignItems: 'center',
   },
   popoverBtnText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  modalHint: {
+    marginTop: spacing.md,
+    fontSize: 13,
+    color: '#FFFFFF',
+    opacity: 0.85,
+    textAlign: 'center',
   },
   avatarText: {
     color: M3.onPrimary,
