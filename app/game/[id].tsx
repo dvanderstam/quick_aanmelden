@@ -17,6 +17,7 @@ import { AttendanceStatus, Game, Player } from '../../src/types';
 import {
   getAllAttendanceForGame,
   setAttendance,
+  setNeedsReplacement,
 } from '../../src/storage';
 import { getCurrentPlayer, canEditPlayer, getPlayersForTeam, signOut } from '../../src/auth';
 import { M3, radii, spacing, typography } from '../../src/theme';
@@ -72,6 +73,8 @@ export default function GameDetailScreen() {
   const teamId = params.teamId || 'ms1';
   const [attendance, setAttendanceState] = useState<Record<number, AttendanceStatus>>({});
   const [timestamps, setTimestamps] = useState<Record<number, string | null>>({});
+  const [needsReplacement, setNeedsReplacementState] = useState<Record<number, boolean>>({});
+  const [popoverPlayerId, setPopoverPlayerId] = useState<number | null>(null);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
 
@@ -83,6 +86,7 @@ export default function GameDetailScreen() {
     const result = await getAllAttendanceForGame(gameId, playerIds);
     setAttendanceState(result.statuses);
     setTimestamps(result.timestamps);
+    setNeedsReplacementState(result.replacements);
   }, [gameId, teamId]);
 
   useEffect(() => {
@@ -109,23 +113,47 @@ export default function GameDetailScreen() {
     const nextIndex = (order.indexOf(current) + 1) % order.length;
     const next = order[nextIndex];
 
-    await setAttendance(gameId, playerId, next);
-    const now = new Date().toISOString();
     const updated = { ...attendance, [playerId]: next };
+    const absentCount = Object.values(updated).filter((s) => s === 'absent').length;
+    const shouldFlag = next === 'absent' && absentCount >= 3 && teamId === 'ms1';
+    const clearFlag = next !== 'absent';
+
+    await setAttendance(gameId, playerId, next, shouldFlag ? true : clearFlag ? false : undefined);
+    const now = new Date().toISOString();
     setAttendanceState(updated);
     setTimestamps((prev) => ({ ...prev, [playerId]: next === null ? null : now }));
+    if (shouldFlag) setNeedsReplacementState((prev) => ({ ...prev, [playerId]: true }));
+    if (clearFlag) setNeedsReplacementState((prev) => ({ ...prev, [playerId]: false }));
     if (next === 'absent') checkAbsenceWarning(updated);
   };
 
   const handleSetStatus = async (playerId: number, status: AttendanceStatus) => {
     const current = attendance[playerId];
     const newStatus = current === status ? null : status;
-    await setAttendance(gameId, playerId, newStatus);
-    const now = new Date().toISOString();
+
     const updated = { ...attendance, [playerId]: newStatus };
+    const absentCount = Object.values(updated).filter((s) => s === 'absent').length;
+    const shouldFlag = newStatus === 'absent' && absentCount >= 3 && teamId === 'ms1';
+    const clearFlag = newStatus !== 'absent';
+
+    await setAttendance(gameId, playerId, newStatus, shouldFlag ? true : clearFlag ? false : undefined);
+    const now = new Date().toISOString();
     setAttendanceState(updated);
     setTimestamps((prev) => ({ ...prev, [playerId]: newStatus === null ? null : now }));
+    if (shouldFlag) setNeedsReplacementState((prev) => ({ ...prev, [playerId]: true }));
+    if (clearFlag) setNeedsReplacementState((prev) => ({ ...prev, [playerId]: false }));
     if (newStatus === 'absent') checkAbsenceWarning(updated);
+  };
+
+  const handleDismissReplacement = async (playerId: number) => {
+    if (!currentPlayer) return;
+    if (currentPlayer.role !== 'admin' && currentPlayer.role !== 'teamAdmin') {
+      setPopoverPlayerId(null);
+      return;
+    }
+    await setNeedsReplacement(gameId, playerId, false);
+    setNeedsReplacementState((prev) => ({ ...prev, [playerId]: false }));
+    setPopoverPlayerId(null);
   };
 
   const handleLogout = async () => {
@@ -222,15 +250,38 @@ export default function GameDetailScreen() {
             return (
               <View style={[styles.playerRow, !editable && styles.playerRowDisabled]}>
                 <View style={styles.playerInfo}>
-                  <View style={[
-                    styles.avatarBadge,
-                    status === 'present' && { backgroundColor: M3.success },
-                    status === 'absent' && { backgroundColor: M3.absent },
-                    status === 'uncertain' && { backgroundColor: M3.warning },
-                  ]}>
-                    <Text style={styles.avatarText}>
-                      {player.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()}
-                    </Text>
+                  <View style={styles.avatarWrapper}>
+                    <View style={[
+                      styles.avatarBadge,
+                      status === 'present' && { backgroundColor: M3.success },
+                      status === 'absent' && { backgroundColor: M3.absent },
+                      status === 'uncertain' && { backgroundColor: M3.warning },
+                    ]}>
+                      <Text style={styles.avatarText}>
+                        {player.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()}
+                      </Text>
+                    </View>
+                    {needsReplacement[player.id] && (
+                      <TouchableOpacity
+                        style={styles.replacementBadge}
+                        onPress={() => setPopoverPlayerId(popoverPlayerId === player.id ? null : player.id)}
+                      >
+                        <MaterialCommunityIcons name="alert" size={14} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    )}
+                    {popoverPlayerId === player.id && (
+                      <View style={styles.popover}>
+                        <Text style={styles.popoverText}>Vervanger regelen</Text>
+                        {currentPlayer && (currentPlayer.role === 'admin' || currentPlayer.role === 'teamAdmin') && (
+                          <TouchableOpacity
+                            style={styles.popoverBtn}
+                            onPress={() => handleDismissReplacement(player.id)}
+                          >
+                            <Text style={styles.popoverBtnText}>Geregeld ✓</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    )}
                   </View>
                   <View>
                     <Text style={styles.playerName}>{player.name}</Text>
@@ -458,7 +509,57 @@ const styles = StyleSheet.create({
     backgroundColor: M3.primary,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  avatarWrapper: {
+    position: 'relative',
     marginRight: spacing.md,
+  },
+  replacementBadge: {
+    position: 'absolute',
+    top: -4,
+    right: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: M3.absent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: M3.surfaceContainer,
+  },
+  popover: {
+    position: 'absolute',
+    top: -8,
+    left: 48,
+    backgroundColor: M3.onSurface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.md,
+    zIndex: 10,
+    minWidth: 160,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  popoverText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  popoverBtn: {
+    marginTop: spacing.sm,
+    backgroundColor: M3.success,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.sm,
+    alignItems: 'center',
+  },
+  popoverBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   avatarText: {
     color: M3.onPrimary,
