@@ -21,6 +21,12 @@ export const TEAMS: TeamConfig[] = [
     icsUrl: 'https://api.foys.io/competition/public-api/v1/teams/c19eccfc-506d-42df-a579-28bfe45aa3a6/ics',
   },
   {
+    id: 'vs1',
+    name: 'Quick Amsterdam VS-1',
+    shortName: 'VS-1',
+    icsUrl: 'https://api.foys.io/competition/public-api/v1/teams/eaa86cf5-a01c-40af-bf8c-ea506d0d355c/ics',
+  },
+  {
     id: 'ms3',
     name: 'Quick Amsterdam MS-3',
     shortName: 'MS-3',

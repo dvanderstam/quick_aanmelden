@@ -24,7 +24,7 @@ import {
   setNeedsReplacement,
   markSubstitute,
 } from '../../src/storage';
-import { getCurrentPlayer, canEditPlayer, getPlayersForTeam, signOut } from '../../src/auth';
+import { getCurrentPlayer, canEditPlayer, canManageTeam, getPlayersForTeam, signOut } from '../../src/auth';
 import { M3, radii, spacing, typography } from '../../src/theme';
 import { QUICK_LOGO_URL, TEAM_NAME } from '../../src/config';
 import { DisclaimerFooter } from '../../src/DisclaimerFooter';
@@ -165,7 +165,7 @@ export default function GameDetailScreen() {
 
   const handleDismissReplacement = async (playerId: number) => {
     if (!currentPlayer) return;
-    if (currentPlayer.role !== 'admin' && currentPlayer.role !== 'teamAdmin') {
+    if (!canManageTeam(currentPlayer, teamId)) {
       setPopoverPlayerId(null);
       return;
     }
@@ -310,7 +310,7 @@ export default function GameDetailScreen() {
           keyExtractor={(item) => item.id.toString()}
           renderItem={({ item: player }) => {
             const status = attendance[player.id] || null;
-            const editable = currentPlayer ? canEditPlayer(currentPlayer, player.id) : false;
+            const editable = currentPlayer ? canEditPlayer(currentPlayer, player.id, teamId) : false;
             return (
               <View style={[styles.playerRow, !editable && styles.playerRowDisabled]}>
                 <View style={styles.playerInfo}>
@@ -414,7 +414,7 @@ export default function GameDetailScreen() {
             {popoverPlayer?.name && (
               <Text style={styles.modalPlayerName}>{popoverPlayer.name}</Text>
             )}
-            {currentPlayer && (currentPlayer.role === 'admin' || currentPlayer.role === 'teamAdmin') ? (
+            {currentPlayer && canManageTeam(currentPlayer, teamId) ? (
               <TouchableOpacity
                 style={styles.popoverBtn}
                 onPress={() => {
@@ -424,7 +424,7 @@ export default function GameDetailScreen() {
                 <Text style={styles.popoverBtnText}>Geregeld ✓</Text>
               </TouchableOpacity>
             ) : (
-              <Text style={styles.modalHint}>Alleen teamadmin of admin kan dit afronden.</Text>
+              <Text style={styles.modalHint}>Alleen captain/teamadmin/admin kan dit afronden.</Text>
             )}
           </Animated.View>
         </View>

@@ -21,4 +21,5 @@ export interface Player {
   must_change_password: boolean;
   disclaimer_accepted?: boolean;
   team_ids?: string[];
+  captain_team_ids?: string[];
 }

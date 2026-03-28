@@ -82,10 +82,17 @@ export async function getCurrentPlayer(): Promise<Player | null> {
   // Fetch team memberships
   const { data: teams } = await supabase
     .from('player_teams')
-    .select('team_id')
+    .select('team_id, is_team_captain')
     .eq('player_id', player.id);
 
-  return { ...player, team_ids: teams?.map((t: { team_id: string }) => t.team_id) || [] };
+  return {
+    ...player,
+    team_ids: teams?.map((t: { team_id: string }) => t.team_id) || [],
+    captain_team_ids:
+      teams
+        ?.filter((t: { team_id: string; is_team_captain?: boolean }) => !!t.is_team_captain)
+        .map((t: { team_id: string }) => t.team_id) || [],
+  };
 }
 
 export async function getAllPlayers(): Promise<Player[]> {
@@ -118,8 +125,15 @@ export async function getPlayersForTeam(teamId: string): Promise<Player[]> {
   return players || [];
 }
 
-export function canEditPlayer(currentPlayer: Player, targetPlayerId: number): boolean {
-  if (currentPlayer.role === 'admin' || currentPlayer.role === 'teamAdmin') return true;
+export function canManageTeam(currentPlayer: Player, teamId: string): boolean {
+  if (currentPlayer.role === 'admin') return true;
+  if (currentPlayer.role === 'teamAdmin' && currentPlayer.team_ids?.includes(teamId)) return true;
+  if (currentPlayer.captain_team_ids?.includes(teamId)) return true;
+  return false;
+}
+
+export function canEditPlayer(currentPlayer: Player, targetPlayerId: number, teamId: string): boolean {
+  if (canManageTeam(currentPlayer, teamId)) return true;
   return currentPlayer.id === targetPlayerId;
 }
 
