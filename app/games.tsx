@@ -28,6 +28,8 @@ const STATUS_OPTIONS: { value: Exclude<AttendanceStatus, null>; label: string; i
   { value: 'uncertain', label: 'Onzeker', icon: 'help-circle', bg: M3.warningContainer, active: M3.warning },
 ];
 
+type MatchView = 'upcoming' | 'past';
+
 function formatDate(date: Date): string {
   const days = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
   const months = [
@@ -81,6 +83,7 @@ function GameCard({
   summary,
   onPress,
   isHero,
+  dimPast = true,
   ownStatus,
   onSetOwnStatus,
   ownStatusDisabled,
@@ -89,17 +92,20 @@ function GameCard({
   summary: { present: number; absent: number; uncertain: number; noResponse: number } | null;
   onPress: () => void;
   isHero?: boolean;
+  dimPast?: boolean;
   ownStatus?: AttendanceStatus;
   onSetOwnStatus?: (status: Exclude<AttendanceStatus, null>) => void;
   ownStatusDisabled?: boolean;
 }) {
   const isPast = game.startDate < new Date();
+  const shouldMutePast = isPast && dimPast;
 
   return (
     <View
       style={[
         styles.card,
-        isPast && styles.cardPast,
+        shouldMutePast && styles.cardPast,
+        !isHero && !dimPast && isPast && styles.cardHistorical,
         isHero && styles.cardHero,
       ]}
     >
@@ -118,17 +124,17 @@ function GameCard({
           >
             <Text style={styles.badgeText}>{game.isHome ? 'THUIS' : 'UIT'}</Text>
           </View>
-          <Text style={[styles.dateText, isPast && styles.textMuted]}>
+          <Text style={[styles.dateText, shouldMutePast && styles.textMuted]}>
             {formatDate(game.startDate)}
           </Text>
         </View>
 
-        <Text style={[styles.opponent, isPast && styles.textMuted, isHero && styles.opponentHero]}>
+        <Text style={[styles.opponent, shouldMutePast && styles.textMuted, isHero && styles.opponentHero]}>
           vs {game.opponent}
         </Text>
 
-        <Text style={[styles.location, isPast && styles.textMuted]} numberOfLines={1}>
-          <MaterialCommunityIcons name="map-marker" size={14} color={isPast ? M3.outline : M3.onSurfaceVariant} /> {game.location}
+        <Text style={[styles.location, shouldMutePast && styles.textMuted]} numberOfLines={1}>
+          <MaterialCommunityIcons name="map-marker" size={14} color={shouldMutePast ? M3.outline : M3.onSurfaceVariant} /> {game.location}
         </Text>
 
         {summary && <SummaryChips summary={summary} />}
@@ -237,6 +243,7 @@ export default function GamesScreen() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [selectedTeam, setSelectedTeam] = useState<TeamConfig | null>(null);
+  const [activeView, setActiveView] = useState<MatchView>('upcoming');
   const [availableTeams, setAvailableTeams] = useState<TeamConfig[]>([]);
   const [ownStatuses, setOwnStatuses] = useState<Record<string, AttendanceStatus>>({});
   const [summaries, setSummaries] = useState<
@@ -421,6 +428,8 @@ export default function GamesScreen() {
   const now = new Date();
   const upcoming = games.filter((g) => g.startDate >= now);
   const past = games.filter((g) => g.startDate < now);
+  const pastGames = [...past].reverse();
+  const visibleGames = activeView === 'upcoming' ? upcoming : pastGames;
   const nextGame = upcoming.length > 0 ? upcoming[0] : null;
 
   // Flip phone cover display mode
@@ -468,55 +477,89 @@ export default function GamesScreen() {
       <View style={styles.listWrapper}>
         <FlatList
           style={[styles.list, { maxWidth: contentWidth, alignSelf: 'center' as const, width: '100%' as unknown as number }]}
-          data={[...upcoming, ...past]}
+          data={visibleGames}
           keyExtractor={(item) => item.id}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={M3.primary} />
           }
           ListHeaderComponent={
-            availableTeams.length > 1 ? (
-              <View style={styles.segmentedContainer}>
+            <View>
+              {availableTeams.length > 1 && (
+                <View style={styles.segmentedContainer}>
+                  <View style={styles.segmentedButton}>
+                    {availableTeams.map((team, i) => (
+                      <TouchableOpacity
+                        key={team.id}
+                        style={[
+                          styles.segment,
+                          selectedTeam?.id === team.id && styles.segmentActive,
+                          i === 0 && styles.segmentFirst,
+                          i === availableTeams.length - 1 && styles.segmentLast,
+                        ]}
+                        onPress={() => setSelectedTeam(team)}
+                      >
+                        {selectedTeam?.id === team.id && (
+                          <Text style={styles.segmentCheck}>✓ </Text>
+                        )}
+                        <Text
+                          style={[
+                            styles.segmentText,
+                            selectedTeam?.id === team.id && styles.segmentTextActive,
+                          ]}
+                        >
+                          {team.shortName}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              <View style={styles.viewToggleContainer}>
                 <View style={styles.segmentedButton}>
-                  {availableTeams.map((team, i) => (
+                  {[
+                    { id: 'upcoming' as const, label: 'Aankomend' },
+                    { id: 'past' as const, label: 'Gespeeld' },
+                  ].map((view, i, allViews) => (
                     <TouchableOpacity
-                      key={team.id}
+                      key={view.id}
                       style={[
                         styles.segment,
-                        selectedTeam?.id === team.id && styles.segmentActive,
+                        activeView === view.id && styles.segmentActive,
                         i === 0 && styles.segmentFirst,
-                        i === availableTeams.length - 1 && styles.segmentLast,
+                        i === allViews.length - 1 && styles.segmentLast,
                       ]}
-                      onPress={() => setSelectedTeam(team)}
+                      onPress={() => setActiveView(view.id)}
                     >
-                      {selectedTeam?.id === team.id && (
-                        <Text style={styles.segmentCheck}>✓ </Text>
-                      )}
                       <Text
                         style={[
                           styles.segmentText,
-                          selectedTeam?.id === team.id && styles.segmentTextActive,
+                          activeView === view.id && styles.segmentTextActive,
                         ]}
                       >
-                        {team.shortName}
+                        {view.label}
                       </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
+                {activeView === 'past' && (
+                  <Text style={styles.viewHint}>Historie van gespeelde wedstrijden, meest recent bovenaan.</Text>
+                )}
               </View>
-            ) : null
+            </View>
           }
           renderItem={({ item, index }) => (
             <>
-              {index === 0 && upcoming.length > 0 && (
-                <Text style={styles.sectionHeader}>Aankomend</Text>
-              )}
-              {index === upcoming.length && past.length > 0 && (
-                <Text style={styles.sectionHeader}>Gespeeld</Text>
+              {index === 0 && (
+                <Text style={[styles.sectionHeader, activeView === 'past' && styles.sectionHeaderHistorical]}>
+                  {activeView === 'upcoming' ? 'Aankomend' : 'Wedstrijdhistorie'}
+                </Text>
               )}
               <GameCard
                 game={item}
                 summary={summaries[item.id] || null}
-                isHero={index === 0 && upcoming.length > 0}
+                isHero={activeView === 'upcoming' && index === 0 && upcoming.length > 0}
+                dimPast={activeView === 'upcoming'}
                 ownStatus={ownStatuses[item.id] ?? null}
                 ownStatusDisabled={savingGameId === item.id}
                 onSetOwnStatus={currentPlayer && selectedTeam && (currentPlayer.role === 'admin' || currentPlayer.team_ids?.includes(selectedTeam.id))
@@ -534,7 +577,9 @@ export default function GamesScreen() {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <MaterialCommunityIcons name="baseball" size={48} color={M3.onSurfaceVariant} />
-              <Text style={styles.emptyText}>Geen wedstrijden gevonden</Text>
+              <Text style={styles.emptyText}>
+                {activeView === 'upcoming' ? 'Geen aankomende wedstrijden' : 'Geen gespeelde wedstrijden'}
+              </Text>
             </View>
           }
           ListFooterComponent={<DisclaimerFooter />}
@@ -629,6 +674,11 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     paddingBottom: spacing.xs,
   },
+  viewToggleContainer: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
+  },
   segmentedButton: {
     flexDirection: 'row',
     borderRadius: radii.full,
@@ -671,6 +721,12 @@ const styles = StyleSheet.create({
     color: M3.onSecondaryContainer,
     fontWeight: '600',
   },
+  viewHint: {
+    ...typography.bodySmall,
+    color: M3.onSurfaceVariant,
+    paddingTop: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
   sectionHeader: {
     ...typography.labelLarge,
     color: M3.onSurfaceVariant,
@@ -678,6 +734,9 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     paddingBottom: spacing.sm,
     textTransform: 'uppercase',
+  },
+  sectionHeaderHistorical: {
+    color: M3.outline,
   },
   // Game cards
   card: {
@@ -691,6 +750,10 @@ const styles = StyleSheet.create({
   },
   cardPast: {
     opacity: 0.5,
+  },
+  cardHistorical: {
+    backgroundColor: M3.surfaceContainerLow,
+    borderColor: M3.outline,
   },
   cardHero: {
     backgroundColor: M3.primaryContainer,

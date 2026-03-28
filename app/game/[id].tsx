@@ -235,6 +235,7 @@ export default function GameDetailScreen() {
   const presentCount = Object.values(attendance).filter((s) => s === 'present').length;
   const absentCount = Object.values(attendance).filter((s) => s === 'absent').length;
   const uncertainCount = Object.values(attendance).filter((s) => s === 'uncertain').length;
+  const isPastGame = game.endDate < new Date();
   const isSmallScreen = width < 520;
   const popoverPlayer = players.find((p) => p.id === popoverPlayerId) ?? null;
 
@@ -259,14 +260,14 @@ export default function GameDetailScreen() {
           />
         </TouchableOpacity>
         <Text style={styles.heroTitle}>{TEAM_NAME}</Text>
-        <Text style={styles.heroSubtitle}>Aanmelden voor wedstrijden</Text>
+        <Text style={styles.heroSubtitle}>{isPastGame ? 'Wedstrijdhistorie' : 'Aanmelden voor wedstrijden'}</Text>
       </View>
       <View style={styles.wrapper}>
         <FlatList
           style={[styles.container, { maxWidth: contentWidth, alignSelf: 'center' as const, width: '100%' as unknown as number }]}
           ListHeaderComponent={
             <View style={styles.header}>
-              <View style={styles.matchInfo}>
+              <View style={[styles.matchInfo, isPastGame && styles.matchInfoPast]}>
                 <View
                   style={[
                     styles.badge,
@@ -280,12 +281,19 @@ export default function GameDetailScreen() {
                 <Text style={styles.opponentText}>vs {game.opponent}</Text>
                 <Text style={styles.dateText}>{formatFullDate(game.startDate)}</Text>
 
+                {isPastGame && (
+                  <View style={styles.historyBadge}>
+                    <MaterialCommunityIcons name="history" size={14} color={M3.onSecondaryContainer} />
+                    <Text style={styles.historyBadgeText}>Gespeelde wedstrijd</Text>
+                  </View>
+                )}
+
                 <TouchableOpacity
-                  style={styles.locationButton}
+                  style={[styles.locationButton, isPastGame && styles.locationButtonPast]}
                   onPress={() => openMaps(game.location)}
                 >
                   <Text style={styles.locationText}><MaterialCommunityIcons name="map-marker" size={14} color={M3.onPrimaryContainer} /> {game.location}</Text>
-                  <Text style={styles.locationHint}>Tik om te navigeren →</Text>
+                  <Text style={styles.locationHint}>{isPastGame ? 'Locatie bekijken →' : 'Tik om te navigeren →'}</Text>
                 </TouchableOpacity>
               </View>
 
@@ -304,7 +312,7 @@ export default function GameDetailScreen() {
                 </View>
               </View>
 
-              <Text style={styles.sectionTitle}>Spelers</Text>
+              <Text style={styles.sectionTitle}>{isPastGame ? 'Registraties' : 'Spelers'}</Text>
             </View>
           }
           data={players}
@@ -504,6 +512,9 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: radii.xl,
     borderBottomRightRadius: radii.xl,
   },
+  matchInfoPast: {
+    backgroundColor: M3.surfaceContainerHigh,
+  },
   badge: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
@@ -534,12 +545,31 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     marginBottom: spacing.md,
   },
+  historyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: M3.secondaryContainer,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+    marginBottom: spacing.md,
+  },
+  historyBadgeText: {
+    color: M3.onSecondaryContainer,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
   locationButton: {
     backgroundColor: 'rgba(0,0,0,0.06)',
     padding: spacing.md,
     borderRadius: radii.md,
     alignItems: 'center',
     width: '100%',
+  },
+  locationButtonPast: {
+    backgroundColor: M3.surfaceContainer,
   },
   locationText: {
     color: M3.onPrimaryContainer,
