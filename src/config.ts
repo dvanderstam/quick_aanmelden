@@ -1,6 +1,7 @@
 export const TEAM_NAME = 'Quick Amsterdam';
 
-export const DEFAULT_PASSWORD = 'Quick2026!';
+// Default password loaded from environment variable - never hardcode!
+export const DEFAULT_PASSWORD = process.env.EXPO_PUBLIC_DEFAULT_PASSWORD || '';
 
 export const QUICK_LOGO_URL =
   'https://quickamsterdam.nl/wp-content/uploads/2022/02/Quick_logo_footer.svg';

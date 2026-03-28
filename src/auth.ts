@@ -8,6 +8,13 @@ function usernameToEmail(username: string): string {
   return `${username.toLowerCase().trim()}@${EMAIL_DOMAIN}`;
 }
 
+function validatePassword(password: string): string | null {
+  if (password.length < 8) return 'Wachtwoord moet minimaal 8 tekens zijn.';
+  if (!/[A-Z]/.test(password)) return 'Wachtwoord moet minimaal 1 hoofdletter bevatten.';
+  if (!/[0-9]/.test(password)) return 'Wachtwoord moet minimaal 1 cijfer bevatten.';
+  return null;
+}
+
 export async function signIn(username: string, password: string) {
   const email = usernameToEmail(username);
   const { data, error } = await supabase.auth.signInWithPassword({
@@ -19,6 +26,9 @@ export async function signIn(username: string, password: string) {
 }
 
 export async function signUp(username: string, password: string) {
+  const passwordError = validatePassword(password);
+  if (passwordError) throw new Error(passwordError);
+
   // Check if username exists and is unclaimed
   const { data: player, error: lookupError } = await supabase
     .from('players')
@@ -114,6 +124,9 @@ export function canEditPlayer(currentPlayer: Player, targetPlayerId: number): bo
 }
 
 export async function changePassword(newPassword: string): Promise<void> {
+  const passwordError = validatePassword(newPassword);
+  if (passwordError) throw new Error(passwordError);
+
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw new Error('Wachtwoord wijzigen mislukt: ' + error.message);
 
@@ -139,6 +152,26 @@ export async function acceptDisclaimer(): Promise<void> {
 
 export async function resetForgottenPassword(username: string, newPassword: string): Promise<void> {
   const email = usernameToEmail(username);
+
+  // Validate that username exists and still has default password
+  const { data: player, error: lookupError } = await supabase
+    .from('players')
+    .select('must_change_password')
+    .eq('username', username.toLowerCase().trim())
+    .maybeSingle();
+
+  if (lookupError || !player) {
+    throw new Error('Wachtwoord resetten is niet mogelijk. Neem contact op met een beheerder.');
+  }
+
+  // Only allow reset if user still has the default password (must_change_password = true)
+  if (!player.must_change_password) {
+    throw new Error('Wachtwoord resetten is niet mogelijk. Neem contact op met een beheerder.');
+  }
+
+  if (!DEFAULT_PASSWORD) {
+    throw new Error('Wachtwoord resetten is niet beschikbaar. Neem contact op met een beheerder.');
+  }
 
   // Try to sign in with the default password
   const { error: signInError } = await supabase.auth.signInWithPassword({

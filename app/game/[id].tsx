@@ -54,12 +54,16 @@ export default function GameDetailScreen() {
   const contentWidth = Math.min(width, 600);
   const game: Game | null = params.data
     ? (() => {
-        const parsed = JSON.parse(params.data);
-        return {
-          ...parsed,
-          startDate: new Date(parsed.startDate),
-          endDate: new Date(parsed.endDate),
-        };
+        try {
+          const parsed = JSON.parse(params.data);
+          return {
+            ...parsed,
+            startDate: new Date(parsed.startDate),
+            endDate: new Date(parsed.endDate),
+          };
+        } catch {
+          return null;
+        }
       })()
     : null;
 

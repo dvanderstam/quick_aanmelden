@@ -32,8 +32,8 @@ export default function RegisterScreen() {
       setError('Kies een wachtwoord.');
       return;
     }
-    if (password.length < 6) {
-      setError('Wachtwoord moet minimaal 6 tekens zijn.');
+    if (password.length < 8) {
+      setError('Wachtwoord moet minimaal 8 tekens zijn.');
       return;
     }
 

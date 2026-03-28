@@ -7,18 +7,8 @@
 alter table players add column if not exists username text unique;
 
 -- Set usernames for existing players
-update players set username = 'reneBos'       where id = 1;
-update players set username = 'viktorClerc'   where id = 2;
-update players set username = 'basDeJong'     where id = 3;
-update players set username = 'geertVtLand'   where id = 4;
-update players set username = 'onnoMets'      where id = 5;
-update players set username = 'olafVanReeden' where id = 6;
-update players set username = 'wimRieff'      where id = 7;
-update players set username = 'ramsesSerno'   where id = 8;
-update players set username = 'daveSpoelstra' where id = 9;
-update players set username = 'danielVdStam'  where id = 10;
-update players set username = 'barryVis'      where id = 11;
-update players set username = 'ralfVis'       where id = 12;
+update players set username = 'daniel2'       where id = 1;
+
 
 -- Make username required going forward
 alter table players alter column username set not null;

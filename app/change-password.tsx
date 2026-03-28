@@ -28,8 +28,8 @@ export default function ChangePasswordScreen() {
       setError('Vul een nieuw wachtwoord in.');
       return;
     }
-    if (password.length < 6) {
-      setError('Wachtwoord moet minimaal 6 tekens zijn.');
+    if (password.length < 8) {
+      setError('Wachtwoord moet minimaal 8 tekens zijn.');
       return;
     }
     if (password !== confirmPassword) {

@@ -34,8 +34,8 @@ export default function ForgotPasswordScreen() {
       setError('Kies een nieuw wachtwoord.');
       return;
     }
-    if (newPassword.length < 6) {
-      setError('Wachtwoord moet minimaal 6 tekens zijn.');
+    if (newPassword.length < 8) {
+      setError('Wachtwoord moet minimaal 8 tekens zijn.');
       return;
     }
     if (newPassword !== confirmPassword) {
