@@ -19,6 +19,7 @@ import {
   getAllAttendanceForGame,
   setAttendance,
   setNeedsReplacement,
+  markSubstitute,
 } from '../../src/storage';
 import { getCurrentPlayer, canEditPlayer, getPlayersForTeam, signOut } from '../../src/auth';
 import { M3, radii, spacing, typography } from '../../src/theme';
@@ -75,6 +76,7 @@ export default function GameDetailScreen() {
   const [attendance, setAttendanceState] = useState<Record<number, AttendanceStatus>>({});
   const [timestamps, setTimestamps] = useState<Record<number, string | null>>({});
   const [needsReplacement, setNeedsReplacementState] = useState<Record<number, boolean>>({});
+  const [substitutes, setSubstitutes] = useState<Record<number, boolean>>({});
   const [popoverPlayerId, setPopoverPlayerId] = useState<number | null>(null);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -88,6 +90,7 @@ export default function GameDetailScreen() {
     setAttendanceState(result.statuses);
     setTimestamps(result.timestamps);
     setNeedsReplacementState(result.replacements);
+    setSubstitutes(result.substitutes);
   }, [gameId, teamId]);
 
   useEffect(() => {
@@ -152,8 +155,11 @@ export default function GameDetailScreen() {
       setPopoverPlayerId(null);
       return;
     }
-    await setNeedsReplacement(gameId, playerId, false);
+    await markSubstitute(gameId, playerId);
+    setAttendanceState((prev) => ({ ...prev, [playerId]: 'present' }));
     setNeedsReplacementState((prev) => ({ ...prev, [playerId]: false }));
+    setSubstitutes((prev) => ({ ...prev, [playerId]: true }));
+    setTimestamps((prev) => ({ ...prev, [playerId]: new Date().toISOString() }));
     setPopoverPlayerId(null);
   };
 
@@ -291,7 +297,12 @@ export default function GameDetailScreen() {
                     )}
                   </View>
                   <View>
-                    <Text style={styles.playerName}>{player.name}</Text>
+                    <Text style={styles.playerName}>
+                      {player.name}
+                      {substitutes[player.id] && (
+                        <Text style={styles.substituteLabel}> (vervangende speler)</Text>
+                      )}
+                    </Text>
                     {status && (
                       <Text style={[
                         styles.playerStatus,
@@ -585,6 +596,12 @@ const styles = StyleSheet.create({
     ...typography.bodyLarge,
     fontWeight: '500',
     color: M3.onSurface,
+  },
+  substituteLabel: {
+    fontSize: 12,
+    fontWeight: '400',
+    fontStyle: 'italic',
+    color: M3.onSurfaceVariant,
   },
   playerStatus: {
     fontSize: 12,

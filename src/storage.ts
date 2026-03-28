@@ -53,32 +53,51 @@ export async function setNeedsReplacement(
     .eq('player_id', playerId);
 }
 
+export async function markSubstitute(
+  gameId: string,
+  playerId: number,
+): Promise<void> {
+  await supabase
+    .from('attendance')
+    .update({
+      status: 'present',
+      needs_replacement: false,
+      is_substitute: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('game_id', gameId)
+    .eq('player_id', playerId);
+}
+
 export async function getAllAttendanceForGame(
   gameId: string,
   playerIds: number[]
-): Promise<{ statuses: Record<number, AttendanceStatus>; timestamps: Record<number, string | null>; replacements: Record<number, boolean> }> {
+): Promise<{ statuses: Record<number, AttendanceStatus>; timestamps: Record<number, string | null>; replacements: Record<number, boolean>; substitutes: Record<number, boolean> }> {
   const { data } = await supabase
     .from('attendance')
-    .select('player_id, status, updated_at, needs_replacement')
+    .select('player_id, status, updated_at, needs_replacement, is_substitute')
     .eq('game_id', gameId)
     .in('player_id', playerIds);
 
   const statuses: Record<number, AttendanceStatus> = {};
   const timestamps: Record<number, string | null> = {};
   const replacements: Record<number, boolean> = {};
+  const substitutes: Record<number, boolean> = {};
   for (const pid of playerIds) {
     statuses[pid] = null;
     timestamps[pid] = null;
     replacements[pid] = false;
+    substitutes[pid] = false;
   }
   if (data) {
     for (const row of data) {
       statuses[row.player_id] = row.status as AttendanceStatus;
       timestamps[row.player_id] = row.updated_at ?? null;
       replacements[row.player_id] = row.needs_replacement ?? false;
+      substitutes[row.player_id] = row.is_substitute ?? false;
     }
   }
-  return { statuses, timestamps, replacements };
+  return { statuses, timestamps, replacements, substitutes };
 }
 
 export async function getAttendanceSummary(
