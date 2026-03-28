@@ -110,16 +110,6 @@ export default function LoginScreen() {
 
           <TouchableOpacity
             style={styles.link}
-            onPress={() => router.push('/register')}
-          >
-            <Text style={styles.linkText}>
-              Eerste keer?{' '}
-              <Text style={styles.linkBold}>Activeer je account</Text>
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.link}
             onPress={() => router.push('/forgot-password')}
           >
             <Text style={styles.linkText}>

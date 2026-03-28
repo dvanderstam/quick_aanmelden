@@ -9,16 +9,24 @@ import {
   RefreshControl,
   useWindowDimensions,
   Image,
+  Alert,
+  Platform,
 } from 'react-native';
 import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { fetchGames } from '../src/icsParser';
-import { getAttendanceSummary } from '../src/storage';
+import { getAttendance, getAttendanceSummary, setAttendance } from '../src/storage';
 import { TEAMS, TeamConfig, QUICK_LOGO_URL, TEAM_NAME } from '../src/config';
-import { Game, Player } from '../src/types';
+import { AttendanceStatus, Game, Player } from '../src/types';
 import { getCurrentPlayer, getPlayersForTeam, signOut } from '../src/auth';
 import { M3, radii, spacing, typography } from '../src/theme';
 import { DisclaimerFooter } from '../src/DisclaimerFooter';
+
+const STATUS_OPTIONS: { value: Exclude<AttendanceStatus, null>; label: string; icon: string; bg: string; active: string }[] = [
+  { value: 'present', label: 'Aanwezig', icon: 'check-circle', bg: M3.successContainer, active: M3.success },
+  { value: 'absent', label: 'Afwezig', icon: 'close-circle', bg: M3.absentContainer, active: M3.absent },
+  { value: 'uncertain', label: 'Onzeker', icon: 'help-circle', bg: M3.warningContainer, active: M3.warning },
+];
 
 function formatDate(date: Date): string {
   const days = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
@@ -73,11 +81,17 @@ function GameCard({
   summary,
   onPress,
   isHero,
+  ownStatus,
+  onSetOwnStatus,
+  ownStatusDisabled,
 }: {
   game: Game;
   summary: { present: number; absent: number; uncertain: number; noResponse: number } | null;
   onPress: () => void;
   isHero?: boolean;
+  ownStatus?: AttendanceStatus;
+  onSetOwnStatus?: (status: Exclude<AttendanceStatus, null>) => void;
+  ownStatusDisabled?: boolean;
 }) {
   const isPast = game.startDate < new Date();
 
@@ -119,6 +133,34 @@ function GameCard({
       </Text>
 
       {summary && <SummaryChips summary={summary} />}
+
+      {onSetOwnStatus && (
+        <View style={styles.ownStatusSection}>
+          <View style={styles.ownStatusButtons}>
+            {STATUS_OPTIONS.map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                disabled={ownStatusDisabled}
+                style={[
+                  styles.ownStatusBtn,
+                  ownStatus === option.value && {
+                    backgroundColor: option.bg,
+                    borderColor: option.active,
+                  },
+                  ownStatusDisabled && styles.ownStatusBtnDisabled,
+                ]}
+                onPress={() => onSetOwnStatus(option.value)}
+              >
+                <MaterialCommunityIcons
+                  name={option.icon as any}
+                  size={18}
+                  color={ownStatus === option.value ? option.active : M3.onSurfaceVariant}
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
@@ -196,12 +238,14 @@ export default function GamesScreen() {
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [selectedTeam, setSelectedTeam] = useState<TeamConfig | null>(null);
   const [availableTeams, setAvailableTeams] = useState<TeamConfig[]>([]);
+  const [ownStatuses, setOwnStatuses] = useState<Record<string, AttendanceStatus>>({});
   const [summaries, setSummaries] = useState<
     Record<string, { present: number; absent: number; uncertain: number; noResponse: number }>
   >({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savingGameId, setSavingGameId] = useState<string | null>(null);
 
   useEffect(() => {
     getCurrentPlayer().then((player) => {
@@ -237,15 +281,94 @@ export default function GamesScreen() {
       setGames(fetchedGames);
 
       const pIds = fetchedPlayers.map((p) => p.id);
-      const sums: typeof summaries = {};
-      for (const g of fetchedGames) {
-        sums[g.id] = await getAttendanceSummary(g.id, pIds);
+      const summaryEntries = await Promise.all(
+        fetchedGames.map(async (game) => [game.id, await getAttendanceSummary(game.id, pIds)] as const)
+      );
+      setSummaries(Object.fromEntries(summaryEntries));
+
+      if (currentPlayer && pIds.includes(currentPlayer.id)) {
+        const statusEntries = await Promise.all(
+          fetchedGames.map(async (game) => [game.id, await getAttendance(game.id, currentPlayer.id)] as const)
+        );
+        setOwnStatuses(Object.fromEntries(statusEntries));
+      } else {
+        setOwnStatuses({});
       }
-      setSummaries(sums);
     } catch (err) {
       setError('Kon wedstrijden niet laden. Controleer je internetverbinding.');
     }
-  }, [selectedTeam]);
+  }, [currentPlayer, selectedTeam]);
+
+  const updateSummaryForOwnStatusChange = useCallback(
+    (
+      gameId: string,
+      previousStatus: AttendanceStatus,
+      nextStatus: AttendanceStatus
+    ) => {
+      setSummaries((prev) => {
+        const summary = prev[gameId];
+        if (!summary) return prev;
+
+        const nextSummary = { ...summary };
+        const decrement = (status: AttendanceStatus) => {
+          if (status === 'present') nextSummary.present = Math.max(0, nextSummary.present - 1);
+          else if (status === 'absent') nextSummary.absent = Math.max(0, nextSummary.absent - 1);
+          else if (status === 'uncertain') nextSummary.uncertain = Math.max(0, nextSummary.uncertain - 1);
+          else nextSummary.noResponse = Math.max(0, nextSummary.noResponse - 1);
+        };
+        const increment = (status: AttendanceStatus) => {
+          if (status === 'present') nextSummary.present += 1;
+          else if (status === 'absent') nextSummary.absent += 1;
+          else if (status === 'uncertain') nextSummary.uncertain += 1;
+          else nextSummary.noResponse += 1;
+        };
+
+        decrement(previousStatus ?? null);
+        increment(nextStatus ?? null);
+
+        return { ...prev, [gameId]: nextSummary };
+      });
+    },
+    []
+  );
+
+  const handleSetOwnStatus = useCallback(async (gameId: string, status: Exclude<AttendanceStatus, null>) => {
+    if (!currentPlayer || !selectedTeam) return;
+
+    const previousStatus = ownStatuses[gameId] ?? null;
+    const nextStatus = previousStatus === status ? null : status;
+    const currentSummary = summaries[gameId];
+    let nextAbsentCount = currentSummary?.absent ?? 0;
+    if (previousStatus === 'absent') nextAbsentCount -= 1;
+    if (nextStatus === 'absent') nextAbsentCount += 1;
+
+    const shouldFlag = selectedTeam.id === 'ms1' && nextStatus === 'absent' && nextAbsentCount >= 3;
+    const clearFlag = nextStatus !== 'absent';
+
+    setSavingGameId(gameId);
+    try {
+      await setAttendance(
+        gameId,
+        currentPlayer.id,
+        nextStatus,
+        shouldFlag ? true : clearFlag ? false : undefined
+      );
+
+      setOwnStatuses((prev) => ({ ...prev, [gameId]: nextStatus }));
+      updateSummaryForOwnStatusChange(gameId, previousStatus, nextStatus);
+
+      if (shouldFlag) {
+        const message = `Je bent de ${nextAbsentCount}e afmelder. Graag een vervanger zoeken. Meld wie het is in de app en aan Bas.`;
+        if (Platform.OS === 'web') {
+          window.alert(message);
+        } else {
+          Alert.alert('Let op!', message, [{ text: 'Begrepen' }]);
+        }
+      }
+    } finally {
+      setSavingGameId(null);
+    }
+  }, [currentPlayer, ownStatuses, selectedTeam, summaries, updateSummaryForOwnStatusChange]);
 
   useEffect(() => {
     if (selectedTeam) {
@@ -388,6 +511,11 @@ export default function GamesScreen() {
                 game={item}
                 summary={summaries[item.id] || null}
                 isHero={index === 0 && upcoming.length > 0}
+                ownStatus={ownStatuses[item.id] ?? null}
+                ownStatusDisabled={savingGameId === item.id}
+                onSetOwnStatus={currentPlayer && players.some((player) => player.id === currentPlayer.id)
+                  ? (status) => handleSetOwnStatus(item.id, status)
+                  : undefined}
                 onPress={() =>
                   router.push({
                     pathname: '/game/[id]',
@@ -637,6 +765,29 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  ownStatusSection: {
+    marginTop: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: M3.outlineVariant,
+  },
+  ownStatusButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  ownStatusBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: M3.surfaceContainerHigh,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  ownStatusBtnDisabled: {
+    opacity: 0.5,
   },
   // Empty
   emptyContainer: {
