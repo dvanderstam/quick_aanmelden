@@ -16,7 +16,7 @@ import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { fetchGames } from '../src/icsParser';
 import { getAttendance, getAttendanceSummary, setAttendance } from '../src/storage';
-import { TEAMS, TeamConfig, QUICK_LOGO_URL, TEAM_NAME } from '../src/config';
+import { TEAMS, TeamConfig, QUICK_LOGO_URL, TEAM_NAME, teamHasReplacementFlow } from '../src/config';
 import { AttendanceStatus, Game, Player } from '../src/types';
 import { getCurrentPlayer, getPlayersForTeam, signOut } from '../src/auth';
 import { M3, radii, spacing, typography } from '../src/theme';
@@ -96,43 +96,43 @@ function GameCard({
   const isPast = game.startDate < new Date();
 
   return (
-    <TouchableOpacity
+    <View
       style={[
         styles.card,
         isPast && styles.cardPast,
         isHero && styles.cardHero,
       ]}
-      onPress={onPress}
-      activeOpacity={0.7}
     >
-      {isHero && (
-        <View style={styles.countdownBadge}>
-          <Text style={styles.countdownText}>{formatCountdown(game.startDate)}</Text>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+        {isHero && (
+          <View style={styles.countdownBadge}>
+            <Text style={styles.countdownText}>{formatCountdown(game.startDate)}</Text>
+          </View>
+        )}
+        <View style={styles.cardHeader}>
+          <View
+            style={[
+              styles.badge,
+              game.isHome ? styles.badgeHome : styles.badgeAway,
+            ]}
+          >
+            <Text style={styles.badgeText}>{game.isHome ? 'THUIS' : 'UIT'}</Text>
+          </View>
+          <Text style={[styles.dateText, isPast && styles.textMuted]}>
+            {formatDate(game.startDate)}
+          </Text>
         </View>
-      )}
-      <View style={styles.cardHeader}>
-        <View
-          style={[
-            styles.badge,
-            game.isHome ? styles.badgeHome : styles.badgeAway,
-          ]}
-        >
-          <Text style={styles.badgeText}>{game.isHome ? 'THUIS' : 'UIT'}</Text>
-        </View>
-        <Text style={[styles.dateText, isPast && styles.textMuted]}>
-          {formatDate(game.startDate)}
+
+        <Text style={[styles.opponent, isPast && styles.textMuted, isHero && styles.opponentHero]}>
+          vs {game.opponent}
         </Text>
-      </View>
 
-      <Text style={[styles.opponent, isPast && styles.textMuted, isHero && styles.opponentHero]}>
-        vs {game.opponent}
-      </Text>
+        <Text style={[styles.location, isPast && styles.textMuted]} numberOfLines={1}>
+          <MaterialCommunityIcons name="map-marker" size={14} color={isPast ? M3.outline : M3.onSurfaceVariant} /> {game.location}
+        </Text>
 
-      <Text style={[styles.location, isPast && styles.textMuted]} numberOfLines={1}>
-        <MaterialCommunityIcons name="map-marker" size={14} color={isPast ? M3.outline : M3.onSurfaceVariant} /> {game.location}
-      </Text>
-
-      {summary && <SummaryChips summary={summary} />}
+        {summary && <SummaryChips summary={summary} />}
+      </TouchableOpacity>
 
       {onSetOwnStatus && (
         <View style={styles.ownStatusSection}>
@@ -161,7 +161,7 @@ function GameCard({
           </View>
         </View>
       )}
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -250,16 +250,22 @@ export default function GamesScreen() {
   useEffect(() => {
     getCurrentPlayer().then((player) => {
       setCurrentPlayer(player);
-      if (player) {
-        // Admins see all teams, teamAdmins and players see only their teams
-        const teams =
-          player.role === 'admin'
-            ? TEAMS
-            : TEAMS.filter((t) => player.team_ids?.includes(t.id));
-        setAvailableTeams(teams);
-        if (teams.length > 0 && !selectedTeam) {
-          setSelectedTeam(teams[0]);
-        }
+      if (!player) {
+        setAvailableTeams([]);
+        setLoading(false);
+        return;
+      }
+
+      // Admins see all teams, teamAdmins and players see only their teams
+      const teams =
+        player.role === 'admin'
+          ? TEAMS
+          : TEAMS.filter((t) => player.team_ids?.includes(t.id));
+      setAvailableTeams(teams);
+      if (teams.length > 0 && !selectedTeam) {
+        setSelectedTeam(teams[0]);
+      } else if (teams.length === 0) {
+        setLoading(false);
       }
     });
   }, []);
@@ -286,7 +292,7 @@ export default function GamesScreen() {
       );
       setSummaries(Object.fromEntries(summaryEntries));
 
-      if (currentPlayer && pIds.includes(currentPlayer.id)) {
+      if (currentPlayer && (pIds.includes(currentPlayer.id) || currentPlayer.role === 'admin')) {
         const statusEntries = await Promise.all(
           fetchedGames.map(async (game) => [game.id, await getAttendance(game.id, currentPlayer.id)] as const)
         );
@@ -342,7 +348,7 @@ export default function GamesScreen() {
     if (previousStatus === 'absent') nextAbsentCount -= 1;
     if (nextStatus === 'absent') nextAbsentCount += 1;
 
-    const shouldFlag = selectedTeam.id === 'ms1' && nextStatus === 'absent' && nextAbsentCount >= 3;
+    const shouldFlag = teamHasReplacementFlow(selectedTeam.id) && nextStatus === 'absent' && nextAbsentCount >= 3;
     const clearFlag = nextStatus !== 'absent';
 
     setSavingGameId(gameId);
@@ -513,7 +519,7 @@ export default function GamesScreen() {
                 isHero={index === 0 && upcoming.length > 0}
                 ownStatus={ownStatuses[item.id] ?? null}
                 ownStatusDisabled={savingGameId === item.id}
-                onSetOwnStatus={currentPlayer && players.some((player) => player.id === currentPlayer.id)
+                onSetOwnStatus={currentPlayer && selectedTeam && (currentPlayer.role === 'admin' || currentPlayer.team_ids?.includes(selectedTeam.id))
                   ? (status) => handleSetOwnStatus(item.id, status)
                   : undefined}
                 onPress={() =>

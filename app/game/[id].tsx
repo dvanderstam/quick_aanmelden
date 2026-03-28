@@ -26,7 +26,7 @@ import {
 } from '../../src/storage';
 import { getCurrentPlayer, canEditPlayer, canManageTeam, getPlayersForTeam, signOut } from '../../src/auth';
 import { M3, radii, spacing, typography } from '../../src/theme';
-import { QUICK_LOGO_URL, TEAM_NAME } from '../../src/config';
+import { QUICK_LOGO_URL, TEAM_NAME, teamHasReplacementFlow } from '../../src/config';
 import { DisclaimerFooter } from '../../src/DisclaimerFooter';
 
 const STATUS_OPTIONS: { value: AttendanceStatus; label: string; icon: string; bg: string; active: string }[] = [
@@ -76,6 +76,7 @@ export default function GameDetailScreen() {
 
   const gameId = params.id;
   const teamId = params.teamId || 'ms1';
+  const replacementFlowEnabled = teamHasReplacementFlow(teamId);
   const [attendance, setAttendanceState] = useState<Record<number, AttendanceStatus>>({});
   const [timestamps, setTimestamps] = useState<Record<number, string | null>>({});
   const [needsReplacement, setNeedsReplacementState] = useState<Record<number, boolean>>({});
@@ -102,7 +103,7 @@ export default function GameDetailScreen() {
   }, [loadData]);
 
   const checkAbsenceWarning = (newAttendance: Record<number, AttendanceStatus>) => {
-    if (teamId !== 'ms1') return;
+    if (!replacementFlowEnabled) return;
     const absentTotal = Object.values(newAttendance).filter((s) => s === 'absent').length;
     if (absentTotal >= 3) {
       const msg = `Je bent de ${absentTotal}e afmelder. Graag een vervanger zoeken. Meld wie het is in de app en aan Bas.`;
@@ -122,7 +123,7 @@ export default function GameDetailScreen() {
 
     const updated = { ...attendance, [playerId]: next };
     const absentCount = Object.values(updated).filter((s) => s === 'absent').length;
-    const shouldFlag = next === 'absent' && absentCount >= 3 && teamId === 'ms1';
+    const shouldFlag = next === 'absent' && absentCount >= 3 && replacementFlowEnabled;
     const clearFlag = next !== 'absent';
 
     // Als speler zichzelf weer op aanwezig zet, verwijder substitute label
@@ -146,7 +147,7 @@ export default function GameDetailScreen() {
 
     const updated = { ...attendance, [playerId]: newStatus };
     const absentCount = Object.values(updated).filter((s) => s === 'absent').length;
-    const shouldFlag = newStatus === 'absent' && absentCount >= 3 && teamId === 'ms1';
+    const shouldFlag = newStatus === 'absent' && absentCount >= 3 && replacementFlowEnabled;
     const clearFlag = newStatus !== 'absent';
 
     // Als speler zichzelf weer op aanwezig zet, verwijder substitute label
