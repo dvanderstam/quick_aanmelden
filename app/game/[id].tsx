@@ -10,6 +10,7 @@ import {
   useWindowDimensions,
   Image,
   Alert,
+  Pressable,
 } from 'react-native';
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -270,17 +271,23 @@ export default function GameDetailScreen() {
                       </TouchableOpacity>
                     )}
                     {popoverPlayerId === player.id && (
-                      <View style={styles.popover}>
-                        <Text style={styles.popoverText}>Vervanger regelen</Text>
-                        {currentPlayer && (currentPlayer.role === 'admin' || currentPlayer.role === 'teamAdmin') && (
-                          <TouchableOpacity
-                            style={styles.popoverBtn}
-                            onPress={() => handleDismissReplacement(player.id)}
-                          >
-                            <Text style={styles.popoverBtnText}>Geregeld ✓</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
+                      <>
+                        <Pressable
+                          style={styles.popoverOverlay}
+                          onPress={() => setPopoverPlayerId(null)}
+                        />
+                        <View style={styles.popover}>
+                          <Text style={styles.popoverText}>Vervanger regelen</Text>
+                          {currentPlayer && (currentPlayer.role === 'admin' || currentPlayer.role === 'teamAdmin') && (
+                            <TouchableOpacity
+                              style={styles.popoverBtn}
+                              onPress={() => handleDismissReplacement(player.id)}
+                            >
+                              <Text style={styles.popoverBtnText}>Geregeld ✓</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </>
                     )}
                   </View>
                   <View>
@@ -535,13 +542,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radii.md,
-    zIndex: 10,
+    zIndex: 11,
     minWidth: 160,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 5,
+  },
+  popoverOverlay: {
+    position: 'fixed' as any,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
   },
   popoverText: {
     color: '#FFFFFF',
