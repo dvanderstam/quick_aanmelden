@@ -9,6 +9,7 @@ import {
   Platform,
   useWindowDimensions,
   Image,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -70,6 +71,7 @@ export default function GameDetailScreen() {
   const gameId = params.id;
   const teamId = params.teamId || 'ms1';
   const [attendance, setAttendanceState] = useState<Record<number, AttendanceStatus>>({});
+  const [timestamps, setTimestamps] = useState<Record<number, string | null>>({});
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
 
@@ -79,13 +81,27 @@ export default function GameDetailScreen() {
     setPlayers(fetchedPlayers);
     const playerIds = fetchedPlayers.map((p) => p.id);
     const result = await getAllAttendanceForGame(gameId, playerIds);
-    setAttendanceState(result);
+    setAttendanceState(result.statuses);
+    setTimestamps(result.timestamps);
   }, [gameId, teamId]);
 
   useEffect(() => {
     loadData();
     getCurrentPlayer().then(setCurrentPlayer);
   }, [loadData]);
+
+  const checkAbsenceWarning = (newAttendance: Record<number, AttendanceStatus>) => {
+    if (teamId !== 'ms1') return;
+    const absentTotal = Object.values(newAttendance).filter((s) => s === 'absent').length;
+    if (absentTotal >= 3) {
+      const msg = `Je bent de ${absentTotal}e afmelder. Graag een vervanger zoeken. Meld wie het is in de app en aan Bas.`;
+      if (Platform.OS === 'web') {
+        window.alert(msg);
+      } else {
+        Alert.alert('Let op!', msg, [{ text: 'Begrepen' }]);
+      }
+    }
+  };
 
   const handleToggle = async (playerId: number) => {
     const current = attendance[playerId] || null;
@@ -94,14 +110,22 @@ export default function GameDetailScreen() {
     const next = order[nextIndex];
 
     await setAttendance(gameId, playerId, next);
-    setAttendanceState((prev) => ({ ...prev, [playerId]: next }));
+    const now = new Date().toISOString();
+    const updated = { ...attendance, [playerId]: next };
+    setAttendanceState(updated);
+    setTimestamps((prev) => ({ ...prev, [playerId]: next === null ? null : now }));
+    if (next === 'absent') checkAbsenceWarning(updated);
   };
 
   const handleSetStatus = async (playerId: number, status: AttendanceStatus) => {
     const current = attendance[playerId];
     const newStatus = current === status ? null : status;
     await setAttendance(gameId, playerId, newStatus);
-    setAttendanceState((prev) => ({ ...prev, [playerId]: newStatus }));
+    const now = new Date().toISOString();
+    const updated = { ...attendance, [playerId]: newStatus };
+    setAttendanceState(updated);
+    setTimestamps((prev) => ({ ...prev, [playerId]: newStatus === null ? null : now }));
+    if (newStatus === 'absent') checkAbsenceWarning(updated);
   };
 
   const handleLogout = async () => {
@@ -243,6 +267,18 @@ export default function GameDetailScreen() {
                     </TouchableOpacity>
                   ))}
                 </View>
+                {timestamps[player.id] && (
+                  <Text style={styles.timestampText}>
+                    {(() => {
+                      const d = new Date(timestamps[player.id]!);
+                      const day = d.getDate().toString().padStart(2, '0');
+                      const month = (d.getMonth() + 1).toString().padStart(2, '0');
+                      const hours = d.getHours().toString().padStart(2, '0');
+                      const minutes = d.getMinutes().toString().padStart(2, '0');
+                      return `${day}-${month} ${hours}:${minutes}`;
+                    })()}
+                  </Text>
+                )}
               </View>
             );
           }}
@@ -461,6 +497,12 @@ const styles = StyleSheet.create({
   },
   statusEmojiDisabled: {
     opacity: 0.4,
+  },
+  timestampText: {
+    fontSize: 11,
+    color: M3.onSurfaceVariant,
+    marginTop: 6,
+    textAlign: 'right',
   },
   separator: {
     height: spacing.sm,

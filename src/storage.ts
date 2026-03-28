@@ -42,30 +42,33 @@ export async function setAttendance(
 export async function getAllAttendanceForGame(
   gameId: string,
   playerIds: number[]
-): Promise<Record<number, AttendanceStatus>> {
+): Promise<{ statuses: Record<number, AttendanceStatus>; timestamps: Record<number, string | null> }> {
   const { data } = await supabase
     .from('attendance')
-    .select('player_id, status')
+    .select('player_id, status, updated_at')
     .eq('game_id', gameId)
     .in('player_id', playerIds);
 
-  const result: Record<number, AttendanceStatus> = {};
+  const statuses: Record<number, AttendanceStatus> = {};
+  const timestamps: Record<number, string | null> = {};
   for (const pid of playerIds) {
-    result[pid] = null;
+    statuses[pid] = null;
+    timestamps[pid] = null;
   }
   if (data) {
     for (const row of data) {
-      result[row.player_id] = row.status as AttendanceStatus;
+      statuses[row.player_id] = row.status as AttendanceStatus;
+      timestamps[row.player_id] = row.updated_at ?? null;
     }
   }
-  return result;
+  return { statuses, timestamps };
 }
 
 export async function getAttendanceSummary(
   gameId: string,
   playerIds: number[]
 ): Promise<{ present: number; absent: number; uncertain: number; noResponse: number }> {
-  const all = await getAllAttendanceForGame(gameId, playerIds);
+  const { statuses: all } = await getAllAttendanceForGame(gameId, playerIds);
   let present = 0;
   let absent = 0;
   let uncertain = 0;
