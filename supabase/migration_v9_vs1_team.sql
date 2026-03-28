@@ -110,3 +110,9 @@ UPDATE player_teams SET is_team_captain = true WHERE player_id = 6  AND team_id 
 
 -- Ensure Olaf remains a normal member in MS-1 (not captain there)
 UPDATE player_teams SET is_team_captain = false WHERE player_id = 6 AND team_id = 'ms1';
+
+-- 6) Ensure Bas is teamAdmin/captain for MS-1
+UPDATE players SET role = 'teamAdmin' WHERE id = 3;
+INSERT INTO player_teams (player_id, team_id) VALUES (3, 'ms1')
+ON CONFLICT (player_id, team_id) DO NOTHING;
+UPDATE player_teams SET is_team_captain = true WHERE player_id = 3 AND team_id = 'ms1';
