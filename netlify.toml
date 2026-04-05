@@ -4,6 +4,9 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  # EXPO_PUBLIC_* variabelen worden by design in de client bundle gezet door Expo.
+  # Ze zijn dus altijd zichtbaar in de output; dit is geen lek.
+  SECRETS_SCAN_OMIT_KEYS = "EXPO_PUBLIC_SUPABASE_URL,EXPO_PUBLIC_SUPABASE_ANON_KEY,EXPO_PUBLIC_DEFAULT_PASSWORD,EXPO_PUBLIC_AUTH_EMAIL_DOMAINS"
 
 # Proxy ICS feeds to avoid CORS issues
 [[redirects]]
