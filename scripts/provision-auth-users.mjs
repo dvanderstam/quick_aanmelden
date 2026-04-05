@@ -36,7 +36,8 @@ function getArgValue(name, fallback) {
 }
 
 async function main() {
-  loadEnvFile(path.resolve(process.cwd(), '.env'));
+  const envFile = getArgValue('env', '.env');
+  loadEnvFile(path.resolve(process.cwd(), envFile));
 
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -60,6 +61,9 @@ async function main() {
   if (!defaultPassword) {
     throw new Error('Missing EXPO_PUBLIC_DEFAULT_PASSWORD.');
   }
+
+  console.log(`Using env file: ${envFile}`);
+  console.log(`Target team: ${teamId}${dryRun ? ' (dry-run)' : ''}`);
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
