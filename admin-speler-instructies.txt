@@ -1,0 +1,82 @@
+ADMIN INSTRUCTIES - SPELER TOEVOEGEN
+
+HUIDIGE SITUATIE
+De app gebruikt twee lagen:
+1. public.players en public.player_teams voor spelers en teamindeling
+2. auth.users voor echte loginaccounts in Supabase Auth
+
+Alleen een speler in de database zetten is niet genoeg.
+Zonder auth.users record en gekoppelde auth_user_id kan die speler niet inloggen.
+
+
+HUIDIGE AANBEVOLEN WERKWIJZE
+Gebruik deze volgorde als je een nieuwe speler toevoegt.
+
+Stap 1 - speler toevoegen in de database
+Voeg een record toe aan public.players.
+Voeg daarna een record toe aan public.player_teams.
+
+Stap 2 - loginaccount provisionen
+Draai daarna het provisioning-script zodat de speler ook een auth account krijgt.
+
+Dry run voor een team:
+npm run provision:auth-users -- --team vs1 --dry-run
+
+Echte run voor een team:
+npm run provision:auth-users -- --team vs1
+
+Wat dit script doet:
+- maakt een auth user aan met e-mail gebruikersnaam@quick.local
+- zet het standaard wachtwoord uit .env
+- koppelt players.auth_user_id
+- zet must_change_password op true
+- zet disclaimer_accepted op false
+
+
+WAT EEN NIEUWE SPELER DAARNA DOET
+De speler logt in via de gewone loginpagina.
+Niet via de activeerpagina.
+
+De speler gebruikt:
+- gebruikersnaam
+- standaard wachtwoord
+
+Daarna wordt de speler doorgestuurd om het wachtwoord te wijzigen.
+
+
+BENODIGDE OMGEVINGSVARIABELEN
+In .env moeten minimaal deze waarden staan:
+- EXPO_PUBLIC_SUPABASE_URL
+- EXPO_PUBLIC_SUPABASE_ANON_KEY
+- EXPO_PUBLIC_DEFAULT_PASSWORD
+- SUPABASE_SERVICE_ROLE_KEY
+- EXPO_PUBLIC_AUTH_EMAIL_DOMAINS=quick.local
+
+
+BELANGRIJK
+De service role key mag alleen lokaal of server-side gebruikt worden.
+Nooit in de frontend tonen of in clientcode opnemen.
+
+
+BESTE STRUCTURELE OPLOSSING
+De beste volgende stap is een admin-flow bouwen waarmee een beheerder in de app een speler toevoegt.
+Die flow moet server-side werken, bijvoorbeeld via een Netlify Function.
+
+Die serverfunctie moet in een keer:
+1. speler toevoegen aan public.players
+2. teamkoppeling toevoegen aan public.player_teams
+3. auth user aanmaken in Supabase Auth
+4. auth_user_id terugschrijven naar public.players
+5. must_change_password op true zetten
+
+Dan hoef je niet meer handmatig in de database te werken.
+
+
+KORTE PRAKTISCHE CONCLUSIE
+Voor nu:
+1. speler in de database zetten
+2. provisioning-script draaien
+
+Voor later:
+1. adminformulier in de app
+2. beveiligde serverfunctie erachter

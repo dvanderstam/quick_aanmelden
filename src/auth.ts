@@ -1,11 +1,17 @@
 import { supabase } from './supabase';
 import { Player } from './types';
-import { DEFAULT_PASSWORD } from './config';
-
-const EMAIL_DOMAIN = 'quick.local';
+import { AUTH_EMAIL_DOMAINS, DEFAULT_PASSWORD } from './config';
 
 function usernameToEmail(username: string): string {
-  return `${username.toLowerCase().trim()}@${EMAIL_DOMAIN}`;
+  const normalized = username.toLowerCase().trim();
+  if (normalized.includes('@')) return normalized;
+  return `${normalized}@${AUTH_EMAIL_DOMAINS[0]}`;
+}
+
+function usernameToEmails(username: string): string[] {
+  const normalized = username.toLowerCase().trim();
+  if (normalized.includes('@')) return [normalized];
+  return AUTH_EMAIL_DOMAINS.map((domain) => `${normalized}@${domain}`);
 }
 
 function validatePassword(password: string): string | null {
@@ -16,13 +22,18 @@ function validatePassword(password: string): string | null {
 }
 
 export async function signIn(username: string, password: string) {
-  const email = usernameToEmail(username);
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-  if (error) throw new Error('Ongeldige gebruikersnaam of wachtwoord.');
-  return data;
+  const emails = usernameToEmails(username);
+
+  for (let i = 0; i < emails.length; i += 1) {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: emails[i],
+      password,
+    });
+
+    if (!error) return data;
+  }
+
+  throw new Error('Ongeldige gebruikersnaam of wachtwoord.');
 }
 
 export async function signUp(username: string, password: string) {
@@ -165,7 +176,7 @@ export async function acceptDisclaimer(): Promise<void> {
 }
 
 export async function resetForgottenPassword(username: string, newPassword: string): Promise<void> {
-  const email = usernameToEmail(username);
+  const emails = usernameToEmails(username);
 
   // Validate that username exists and still has default password
   const { data: player, error: lookupError } = await supabase
@@ -187,13 +198,21 @@ export async function resetForgottenPassword(username: string, newPassword: stri
     throw new Error('Wachtwoord resetten is niet beschikbaar. Neem contact op met een beheerder.');
   }
 
-  // Try to sign in with the default password
-  const { error: signInError } = await supabase.auth.signInWithPassword({
-    email,
-    password: DEFAULT_PASSWORD,
-  });
+  // Try to sign in with the default password across configured email domains.
+  let signedIn = false;
+  for (let i = 0; i < emails.length; i += 1) {
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: emails[i],
+      password: DEFAULT_PASSWORD,
+    });
 
-  if (signInError) {
+    if (!signInError) {
+      signedIn = true;
+      break;
+    }
+  }
+
+  if (!signedIn) {
     throw new Error(
       'Wachtwoord resetten is niet mogelijk. Neem contact op met een beheerder.'
     );

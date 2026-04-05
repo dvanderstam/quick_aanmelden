@@ -3,6 +3,16 @@ export const TEAM_NAME = 'Quick Amsterdam';
 // Default password loaded from environment variable - never hardcode!
 export const DEFAULT_PASSWORD = process.env.EXPO_PUBLIC_DEFAULT_PASSWORD || '';
 
+// Comma-separated list of accepted auth email domains (first item is used for sign-up).
+const configuredAuthDomains = (process.env.EXPO_PUBLIC_AUTH_EMAIL_DOMAINS || 'quick.local')
+  .split(',')
+  .map((domain) => domain.trim().toLowerCase())
+  .filter(Boolean);
+
+export const AUTH_EMAIL_DOMAINS = configuredAuthDomains.length > 0
+  ? configuredAuthDomains
+  : ['quick.local'];
+
 export const QUICK_LOGO_URL =
   'https://quickamsterdam.nl/wp-content/uploads/2022/02/Quick_logo_footer.svg';
 
