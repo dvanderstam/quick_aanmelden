@@ -23,6 +23,13 @@ export const TEAMS: TeamConfig[] = [
     enableReplacementFlow: true,
   },
   {
+    id: 'ms2',
+    name: 'Quick Amsterdam MS-2',
+    shortName: 'MS-2',
+    icsUrl: 'https://api.foys.io/competition/public-api/v1/teams/c2f087d1-1637-4e16-b894-86c5a6131bcc/ics',
+    enableReplacementFlow: true,
+  },
+  {
     id: 'mh2',
     name: 'Quick Amsterdam MH-2',
     shortName: 'MH-2',
