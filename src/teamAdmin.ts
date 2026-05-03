@@ -72,6 +72,7 @@ export interface CreateTeamInput {
   shortName: string;
   icsUrl: string;
   enableReplacementFlow: boolean;
+  enableReplacementNameEntry: boolean;
   active: boolean;
 }
 
@@ -85,6 +86,7 @@ export interface UpdateTeamInput {
   shortName: string;
   icsUrl: string;
   enableReplacementFlow: boolean;
+  enableReplacementNameEntry: boolean;
   active: boolean;
 }
 

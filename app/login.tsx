@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { signIn } from '../src/auth';
-import { TEAM_NAME, QUICK_LOGO_URL } from '../src/config';
+import { QUICK_LOGO_URL } from '../src/config';
 import { M3, radii, spacing, typography } from '../src/theme';
 
 export default function LoginScreen() {
@@ -24,6 +24,8 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const handleLogin = async () => {
+    if (loading) return;
+
     if (!username || !password) {
       setError('Vul je gebruikersnaam en wachtwoord in.');
       return;
@@ -57,7 +59,6 @@ export default function LoginScreen() {
             style={styles.logoImage}
             resizeMode="contain"
           />
-          <Text style={styles.teamName}>{TEAM_NAME}</Text>
           <Text style={styles.subtitle}>Aanmelden voor wedstrijden</Text>
         </View>
 
@@ -130,8 +131,8 @@ const styles = StyleSheet.create({
   },
   hero: {
     backgroundColor: '#1E5FA0',
-    paddingTop: 72,
-    paddingBottom: 40,
+    paddingTop: 44,
+    paddingBottom: 24,
     paddingHorizontal: spacing.lg,
     alignItems: 'center',
   },
@@ -140,8 +141,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   logoImage: {
-    width: 160,
-    height: 160,
+    width: 120,
+    height: 120,
     marginBottom: spacing.sm,
   },
   teamName: {

@@ -16,7 +16,7 @@ import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { fetchGames } from '../src/icsParser';
 import { getAttendance, getAttendanceSummary, setAttendance } from '../src/storage';
-import { TeamConfig, QUICK_LOGO_URL, TEAM_NAME, teamHasReplacementFlow } from '../src/config';
+import { TeamConfig, QUICK_LOGO_URL, teamHasReplacementFlow } from '../src/config';
 import { AttendanceStatus, Game, Player } from '../src/types';
 import { getCurrentPlayer, getPlayersForTeam, signOut } from '../src/auth';
 import { getTeams } from '../src/teamAdmin';
@@ -516,7 +516,6 @@ export default function GamesScreen() {
             resizeMode="contain"
           />
         </TouchableOpacity>
-        <Text style={styles.heroTitle}>{TEAM_NAME}</Text>
         <Text style={styles.heroSubtitle}>Aanmelden voor wedstrijden</Text>
       </View>
       <View style={styles.listWrapper}>
@@ -602,14 +601,14 @@ export default function GamesScreen() {
 const styles = StyleSheet.create({
   hero: {
     backgroundColor: '#1E5FA0',
-    paddingTop: 10,
-    paddingBottom: 10,
+    paddingTop: 8,
+    paddingBottom: 8,
     paddingHorizontal: spacing.lg,
     alignItems: 'center',
   },
   heroLogo: {
-    width: 160,
-    height: 160,
+    width: 96,
+    height: 96,
     marginBottom: spacing.xs,
   },
   heroTitle: {

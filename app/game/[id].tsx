@@ -14,6 +14,7 @@ import {
   Modal,
   Animated,
   PanResponder,
+  TextInput,
 } from 'react-native';
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -23,11 +24,16 @@ import {
   setAttendance,
   setNeedsReplacement,
   markSubstitute,
+  setPlayerReplacementName,
 } from '../../src/storage';
 import { getCurrentPlayer, canEditPlayer, canManageTeam, getPlayersForTeam, signOut } from '../../src/auth';
 import { getTeams } from '../../src/teamAdmin';
 import { M3, radii, spacing, typography } from '../../src/theme';
-import { QUICK_LOGO_URL, TEAM_NAME, teamHasReplacementFlow } from '../../src/config';
+import {
+  QUICK_LOGO_URL,
+  teamHasReplacementFlow,
+  teamHasReplacementNameEntry,
+} from '../../src/config';
 import { DisclaimerFooter } from '../../src/DisclaimerFooter';
 
 const STATUS_OPTIONS: { value: AttendanceStatus; label: string; icon: string; bg: string; active: string }[] = [
@@ -78,11 +84,15 @@ export default function GameDetailScreen() {
   const gameId = params.id;
   const teamId = params.teamId || 'ms1';
   const [replacementFlowEnabled, setReplacementFlowEnabled] = useState(teamHasReplacementFlow(teamId));
+  const [replacementNameEntryEnabled, setReplacementNameEntryEnabled] = useState(teamHasReplacementNameEntry(teamId));
   const [attendance, setAttendanceState] = useState<Record<number, AttendanceStatus>>({});
   const [timestamps, setTimestamps] = useState<Record<number, string | null>>({});
   const [needsReplacement, setNeedsReplacementState] = useState<Record<number, boolean>>({});
   const [substitutes, setSubstitutes] = useState<Record<number, boolean>>({});
+  const [replacementNames, setReplacementNames] = useState<Record<number, string | null>>({});
   const [popoverPlayerId, setPopoverPlayerId] = useState<number | null>(null);
+  const [replacementInput, setReplacementInput] = useState('');
+  const [savingReplacementForPlayerId, setSavingReplacementForPlayerId] = useState<number | null>(null);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
 
@@ -112,6 +122,7 @@ export default function GameDetailScreen() {
     setTimestamps(result.timestamps);
     setNeedsReplacementState(result.replacements);
     setSubstitutes(result.substitutes);
+    setReplacementNames(result.replacementNames);
   }, [gameId, teamId]);
 
   useEffect(() => {
@@ -125,11 +136,13 @@ export default function GameDetailScreen() {
       .then(() => {
         if (!cancelled) {
           setReplacementFlowEnabled(teamHasReplacementFlow(teamId));
+          setReplacementNameEntryEnabled(teamHasReplacementNameEntry(teamId));
         }
       })
       .catch(() => {
         if (!cancelled) {
           setReplacementFlowEnabled(teamHasReplacementFlow(teamId));
+          setReplacementNameEntryEnabled(teamHasReplacementNameEntry(teamId));
         }
       });
 
@@ -162,6 +175,69 @@ export default function GameDetailScreen() {
       }
     }
   };
+
+  const canEditReplacementForPlayer = useCallback((playerId: number): boolean => {
+    if (!currentPlayer) return false;
+
+    const isAdmin = currentPlayer.role === 'admin';
+    const isCaptainForTeam = currentPlayer.captain_team_ids?.includes(teamId) === true;
+    if (!(isAdmin || isCaptainForTeam)) return false;
+
+    return true;
+  }, [currentPlayer, teamId]);
+
+  const canResolveLegacyReplacementForPlayer = useCallback((playerId: number): boolean => {
+    if (!currentPlayer) return false;
+    if (!canManageTeam(currentPlayer, teamId)) return false;
+    return true;
+  }, [currentPlayer, teamId]);
+
+  const openReplacementSheet = useCallback((playerId: number, currentReplacementName: string | null) => {
+    setReplacementInput(currentReplacementName || '');
+    setPopoverPlayerId(playerId);
+  }, []);
+
+  const handleSaveReplacement = useCallback(async (playerId: number, replacementNameValue: string | null) => {
+    if (!currentPlayer) return;
+
+    if (!canEditReplacementForPlayer(playerId)) {
+      setPopoverPlayerId(null);
+      return;
+    }
+
+    const normalizedReplacementName = (replacementNameValue || '').replace(/\s+/g, ' ').trim();
+
+    setSavingReplacementForPlayerId(playerId);
+    try {
+      const updated = await setPlayerReplacementName(
+        gameId,
+        teamId,
+        playerId,
+        normalizedReplacementName || null
+      );
+
+      setAttendanceState((prev) => ({ ...prev, [playerId]: updated.status }));
+      setTimestamps((prev) => ({ ...prev, [playerId]: updated.updatedAt }));
+      setReplacementNames((prev) => ({ ...prev, [playerId]: updated.replacementName }));
+      setSubstitutes((prev) => ({ ...prev, [playerId]: false }));
+
+      if (updated.replacementName) {
+        setNeedsReplacementState((prev) => ({ ...prev, [playerId]: false }));
+      }
+
+      setPopoverPlayerId(null);
+      setReplacementInput('');
+    } catch (err: any) {
+      const message = err?.message || 'Vervanger opslaan mislukt.';
+      if (Platform.OS === 'web') {
+        window.alert(message);
+      } else {
+        Alert.alert('Fout', message);
+      }
+    } finally {
+      setSavingReplacementForPlayerId(null);
+    }
+  }, [canEditReplacementForPlayer, currentPlayer, gameId, teamId]);
 
   const handleToggle = async (playerId: number) => {
     const current = attendance[playerId] || null;
@@ -214,7 +290,7 @@ export default function GameDetailScreen() {
 
   const handleDismissReplacement = async (playerId: number) => {
     if (!currentPlayer) return;
-    if (!canManageTeam(currentPlayer, teamId)) {
+    if (!canResolveLegacyReplacementForPlayer(playerId)) {
       setPopoverPlayerId(null);
       return;
     }
@@ -234,6 +310,7 @@ export default function GameDetailScreen() {
   const sheetTranslateY = useRef(new Animated.Value(0)).current;
   const closeSheet = useCallback(() => {
     setPopoverPlayerId(null);
+    setReplacementInput('');
     sheetTranslateY.setValue(0);
   }, [sheetTranslateY]);
 
@@ -289,6 +366,9 @@ export default function GameDetailScreen() {
   const isPastGame = game.endDate < new Date();
   const isSmallScreen = width < 520;
   const popoverPlayer = players.find((p) => p.id === popoverPlayerId) ?? null;
+  const popoverReplacementName = popoverPlayerId !== null ? replacementNames[popoverPlayerId] || null : null;
+  const canEditPopoverReplacement = popoverPlayerId !== null && canEditReplacementForPlayer(popoverPlayerId);
+  const canResolveLegacyPopoverReplacement = popoverPlayerId !== null && canResolveLegacyReplacementForPlayer(popoverPlayerId);
 
   return (
     <>
@@ -310,7 +390,6 @@ export default function GameDetailScreen() {
             resizeMode="contain"
           />
         </TouchableOpacity>
-        <Text style={styles.heroTitle}>{TEAM_NAME}</Text>
         <Text style={styles.heroSubtitle}>{isPastGame ? 'Wedstrijdhistorie' : 'Aanmelden voor wedstrijden'}</Text>
       </View>
       <View style={styles.wrapper}>
@@ -371,6 +450,24 @@ export default function GameDetailScreen() {
           renderItem={({ item: player }) => {
             const status = attendance[player.id] || null;
             const editable = currentPlayer ? canEditPlayer(currentPlayer, player.id, teamId) : false;
+            const replacementName = replacementNames[player.id] || null;
+            const canEditReplacement = canEditReplacementForPlayer(player.id);
+            const canResolveLegacyReplacement = canResolveLegacyReplacementForPlayer(player.id);
+            const showReplacementEntry = replacementNameEntryEnabled
+              && canEditReplacement
+              && (status === 'absent' || !!replacementName);
+            const statusLabel = replacementName
+              ? 'Vervanger geregeld'
+              : (status ? STATUS_OPTIONS.find((o) => o.value === status)?.label : null);
+            const statusColor = replacementName
+              ? M3.success
+              : status === 'present'
+                ? M3.success
+                : status === 'absent'
+                  ? M3.absent
+                  : status === 'uncertain'
+                    ? M3.warning
+                    : null;
             return (
               <View style={[styles.playerRow, isSmallScreen && styles.playerRowMobile, !editable && styles.playerRowDisabled]}>
                 <View style={styles.playerInfo}>
@@ -385,7 +482,22 @@ export default function GameDetailScreen() {
                         {player.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()}
                       </Text>
                     </View>
-                    {needsReplacement[player.id] && (
+                    {showReplacementEntry && (
+                      <TouchableOpacity
+                        style={[
+                          styles.replacementBadge,
+                          replacementName && styles.replacementBadgeResolved,
+                        ]}
+                        onPress={() => openReplacementSheet(player.id, replacementName)}
+                      >
+                        <MaterialCommunityIcons
+                          name={replacementName ? 'account-check' : 'account-edit'}
+                          size={14}
+                          color="#FFFFFF"
+                        />
+                      </TouchableOpacity>
+                    )}
+                    {!replacementNameEntryEnabled && needsReplacement[player.id] && canResolveLegacyReplacement && (
                       <TouchableOpacity
                         style={styles.replacementBadge}
                         onPress={() => setPopoverPlayerId(popoverPlayerId === player.id ? null : player.id)}
@@ -401,15 +513,16 @@ export default function GameDetailScreen() {
                         <Text style={styles.substituteLabel}> (vervangende speler)</Text>
                       )}
                     </Text>
-                    {status && (
+                    {statusLabel && statusColor && (
                       <Text style={[
                         styles.playerStatus,
-                        status === 'present' && { color: M3.success },
-                        status === 'absent' && { color: M3.absent },
-                        status === 'uncertain' && { color: M3.warning },
+                        { color: statusColor },
                       ]}>
-                        {STATUS_OPTIONS.find(o => o.value === status)?.label}
+                        {statusLabel}
                       </Text>
+                    )}
+                    {replacementName && (
+                      <Text style={styles.replacementNameText}>Vervanger: {replacementName}</Text>
                     )}
                     {player.count_in_player_list === false && (
                       <Text style={styles.playerMetaText}>Captain (niet meetellen in spelerslijst)</Text>
@@ -476,21 +589,81 @@ export default function GameDetailScreen() {
             {...(isSmallScreen ? sheetPanResponder.panHandlers : {})}
           >
             {isSmallScreen && <View style={styles.sheetHandle} />}
-            <Text style={styles.popoverText}>Vervanger regelen</Text>
-            {popoverPlayer?.name && (
-              <Text style={styles.modalPlayerName}>{popoverPlayer.name}</Text>
-            )}
-            {currentPlayer && canManageTeam(currentPlayer, teamId) ? (
-              <TouchableOpacity
-                style={styles.popoverBtn}
-                onPress={() => {
-                  if (popoverPlayerId !== null) handleDismissReplacement(popoverPlayerId);
-                }}
-              >
-                <Text style={styles.popoverBtnText}>Geregeld ✓</Text>
-              </TouchableOpacity>
+            {replacementNameEntryEnabled ? (
+              <>
+                <Text style={styles.popoverText}>Vervanger invullen</Text>
+                {popoverPlayer?.name && (
+                  <Text style={styles.modalPlayerName}>{popoverPlayer.name}</Text>
+                )}
+                {canEditPopoverReplacement ? (
+                  <>
+                    <TextInput
+                      value={replacementInput}
+                      onChangeText={setReplacementInput}
+                      placeholder="Naam vervanger"
+                      placeholderTextColor="rgba(255,255,255,0.45)"
+                      style={styles.replacementInput}
+                      editable={savingReplacementForPlayerId !== popoverPlayerId}
+                    />
+                    <View style={styles.popoverActionRow}>
+                      <TouchableOpacity
+                        style={[
+                          styles.popoverBtn,
+                          styles.popoverSecondaryBtn,
+                          savingReplacementForPlayerId === popoverPlayerId && styles.popoverBtnDisabled,
+                        ]}
+                        disabled={savingReplacementForPlayerId === popoverPlayerId}
+                        onPress={() => {
+                          if (popoverPlayerId !== null) {
+                            handleSaveReplacement(popoverPlayerId, null);
+                          }
+                        }}
+                      >
+                        <Text style={styles.popoverBtnText}>Wissen</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.popoverBtn,
+                          savingReplacementForPlayerId === popoverPlayerId && styles.popoverBtnDisabled,
+                        ]}
+                        disabled={savingReplacementForPlayerId === popoverPlayerId}
+                        onPress={() => {
+                          if (popoverPlayerId !== null) {
+                            handleSaveReplacement(popoverPlayerId, replacementInput);
+                          }
+                        }}
+                      >
+                        <Text style={styles.popoverBtnText}>Opslaan</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                ) : (
+                  <Text style={styles.modalHint}>
+                    {popoverReplacementName
+                      ? `Vervanger: ${popoverReplacementName}`
+                      : 'Nog geen vervanger ingevuld.'}
+                  </Text>
+                )}
+              </>
             ) : (
-              <Text style={styles.modalHint}>Alleen captain/teamadmin/admin kan dit afronden.</Text>
+              <>
+                <Text style={styles.popoverText}>Vervanger regelen</Text>
+                {popoverPlayer?.name && (
+                  <Text style={styles.modalPlayerName}>{popoverPlayer.name}</Text>
+                )}
+                {canResolveLegacyPopoverReplacement ? (
+                  <TouchableOpacity
+                    style={styles.popoverBtn}
+                    onPress={() => {
+                      if (popoverPlayerId !== null) handleDismissReplacement(popoverPlayerId);
+                    }}
+                  >
+                    <Text style={styles.popoverBtnText}>Geregeld ✓</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={styles.modalHint}>Alleen captain/teamadmin/admin kan dit afronden.</Text>
+                )}
+              </>
             )}
           </Animated.View>
         </View>
@@ -502,14 +675,14 @@ export default function GameDetailScreen() {
 const styles = StyleSheet.create({
   hero: {
     backgroundColor: '#1E5FA0',
-    paddingTop: 10,
-    paddingBottom: 10,
+    paddingTop: 8,
+    paddingBottom: 8,
     paddingHorizontal: spacing.lg,
     alignItems: 'center',
   },
   heroLogo: {
-    width: 160,
-    height: 160,
+    width: 96,
+    height: 96,
     marginBottom: spacing.xs,
   },
   heroTitle: {
@@ -716,6 +889,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: M3.surfaceContainer,
   },
+  replacementBadgeResolved: {
+    backgroundColor: M3.success,
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
@@ -789,6 +965,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     borderRadius: radii.md,
     alignItems: 'center',
+    minWidth: 110,
+  },
+  popoverActionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'center',
+  },
+  popoverSecondaryBtn: {
+    backgroundColor: M3.errorContainer,
+  },
+  popoverBtnDisabled: {
+    opacity: 0.6,
   },
   popoverBtnText: {
     color: '#FFFFFF',
@@ -830,6 +1018,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: M3.onSurfaceVariant,
     fontStyle: 'italic',
+  },
+  replacementNameText: {
+    marginTop: 1,
+    fontSize: 12,
+    color: M3.onSurfaceVariant,
+  },
+  replacementInput: {
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    color: '#FFFFFF',
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   playerRight: {
     alignItems: 'flex-end',

@@ -2,6 +2,16 @@ import { supabase } from './supabase';
 import { Player } from './types';
 
 const EMAIL_DOMAIN = 'quick.local';
+const AUTH_LOCK_STEAL_FRAGMENT = "Lock broken by another request with the 'steal' option";
+
+function isAuthLockStealError(error: unknown): boolean {
+  const message = String((error as any)?.message || '');
+  return message.includes(AUTH_LOCK_STEAL_FRAGMENT);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function normalizePlayer(row: any): Player {
   return {
@@ -36,11 +46,29 @@ function validatePassword(password: string): string | null {
 
 export async function signIn(username: string, password: string) {
   const email = usernameToEmail(username);
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-  if (error) throw new Error('Ongeldige gebruikersnaam of wachtwoord.');
+  let data: any = null;
+  let error: any = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    data = result.data;
+    error = result.error;
+
+    // This can happen when two auth calls overlap (multi-tab or double submit).
+    if (!error || !isAuthLockStealError(error) || attempt === 1) break;
+    await sleep(120);
+  }
+
+  if (error) {
+    if (isAuthLockStealError(error)) {
+      throw new Error('Inloggen was tegelijk op meerdere plekken bezig. Probeer nog een keer.');
+    }
+    throw new Error('Ongeldige gebruikersnaam of wachtwoord.');
+  }
 
   const authUserId = data.user?.id;
   if (!authUserId) {

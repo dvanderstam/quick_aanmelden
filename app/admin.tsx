@@ -140,6 +140,7 @@ export default function AdminScreen() {
   const [newTeamShortName, setNewTeamShortName] = useState('');
   const [newTeamIcsUrl, setNewTeamIcsUrl] = useState('');
   const [newTeamReplacementFlow, setNewTeamReplacementFlow] = useState(false);
+  const [newTeamReplacementNameEntry, setNewTeamReplacementNameEntry] = useState(false);
   const [newTeamActive, setNewTeamActive] = useState(true);
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [createTeamError, setCreateTeamError] = useState<string | null>(null);
@@ -149,6 +150,7 @@ export default function AdminScreen() {
   const [editTeamShortName, setEditTeamShortName] = useState('');
   const [editTeamIcsUrl, setEditTeamIcsUrl] = useState('');
   const [editTeamReplacementFlow, setEditTeamReplacementFlow] = useState(false);
+  const [editTeamReplacementNameEntry, setEditTeamReplacementNameEntry] = useState(false);
   const [editTeamActive, setEditTeamActive] = useState(true);
   const [savingEditTeam, setSavingEditTeam] = useState(false);
   const [editTeamError, setEditTeamError] = useState<string | null>(null);
@@ -576,6 +578,7 @@ export default function AdminScreen() {
     setNewTeamShortName('');
     setNewTeamIcsUrl('');
     setNewTeamReplacementFlow(false);
+    setNewTeamReplacementNameEntry(false);
     setNewTeamActive(true);
     setCreateTeamError(null);
     setCreatingTeam(false);
@@ -588,6 +591,7 @@ export default function AdminScreen() {
       setEditTeamShortName('');
       setEditTeamIcsUrl('');
       setEditTeamReplacementFlow(false);
+      setEditTeamReplacementNameEntry(false);
       setEditTeamActive(true);
       return;
     }
@@ -597,6 +601,7 @@ export default function AdminScreen() {
     setEditTeamShortName(team.shortName || '');
     setEditTeamIcsUrl(team.icsUrl || '');
     setEditTeamReplacementFlow(team.enableReplacementFlow === true);
+    setEditTeamReplacementNameEntry(team.enableReplacementNameEntry === true);
     setEditTeamActive(team.active !== false);
   }, []);
 
@@ -764,6 +769,7 @@ export default function AdminScreen() {
         shortName: normalizedShortName,
         icsUrl: normalizedIcsUrl,
         enableReplacementFlow: newTeamReplacementFlow,
+        enableReplacementNameEntry: newTeamReplacementNameEntry,
         active: newTeamActive,
       });
 
@@ -785,6 +791,7 @@ export default function AdminScreen() {
     newTeamId,
     newTeamName,
     newTeamReplacementFlow,
+    newTeamReplacementNameEntry,
     newTeamShortName,
     showInfoMessage,
   ]);
@@ -820,6 +827,7 @@ export default function AdminScreen() {
         shortName: normalizedShortName,
         icsUrl: normalizedIcsUrl,
         enableReplacementFlow: editTeamReplacementFlow,
+        enableReplacementNameEntry: editTeamReplacementNameEntry,
         active: editTeamActive,
       });
 
@@ -838,6 +846,7 @@ export default function AdminScreen() {
     editTeamId,
     editTeamName,
     editTeamReplacementFlow,
+    editTeamReplacementNameEntry,
     editTeamShortName,
     isAdmin,
     loadTeams,
@@ -1581,6 +1590,16 @@ export default function AdminScreen() {
               </View>
 
               <View style={styles.inlineSwitchRow}>
+                <Text style={styles.inlineSwitchLabel}>Vervangernaam invullen aan</Text>
+                <Switch
+                  value={newTeamReplacementNameEntry}
+                  onValueChange={setNewTeamReplacementNameEntry}
+                  thumbColor={newTeamReplacementNameEntry ? M3.primary : M3.outline}
+                  trackColor={{ false: M3.surfaceContainerHighest, true: M3.primaryContainer }}
+                />
+              </View>
+
+              <View style={styles.inlineSwitchRow}>
                 <Text style={styles.inlineSwitchLabel}>Team actief</Text>
                 <Switch
                   value={newTeamActive}
@@ -1678,6 +1697,16 @@ export default function AdminScreen() {
                   value={editTeamReplacementFlow}
                   onValueChange={setEditTeamReplacementFlow}
                   thumbColor={editTeamReplacementFlow ? M3.primary : M3.outline}
+                  trackColor={{ false: M3.surfaceContainerHighest, true: M3.primaryContainer }}
+                />
+              </View>
+
+              <View style={styles.inlineSwitchRow}>
+                <Text style={styles.inlineSwitchLabel}>Vervangernaam invullen aan</Text>
+                <Switch
+                  value={editTeamReplacementNameEntry}
+                  onValueChange={setEditTeamReplacementNameEntry}
+                  thumbColor={editTeamReplacementNameEntry ? M3.primary : M3.outline}
                   trackColor={{ false: M3.surfaceContainerHighest, true: M3.primaryContainer }}
                 />
               </View>

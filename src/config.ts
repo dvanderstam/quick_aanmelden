@@ -14,6 +14,7 @@ export interface TeamConfig {
   shortName: string;
   icsUrl: string;
   enableReplacementFlow: boolean;
+  enableReplacementNameEntry: boolean;
   active?: boolean;
 }
 
@@ -24,6 +25,7 @@ export const TEAMS: TeamConfig[] = [
     shortName: 'MS-1',
     icsUrl: 'https://api.foys.io/competition/public-api/v1/teams/c19eccfc-506d-42df-a579-28bfe45aa3a6/ics',
     enableReplacementFlow: true,
+    enableReplacementNameEntry: false,
   },
   {
     id: 'ms2',
@@ -31,6 +33,7 @@ export const TEAMS: TeamConfig[] = [
     shortName: 'MS-2',
     icsUrl: 'https://api.foys.io/competition/public-api/v1/teams/c2f087d1-1637-4e16-b894-86c5a6131bcc/ics',
     enableReplacementFlow: true,
+    enableReplacementNameEntry: false,
   },
   {
     id: 'mh2',
@@ -38,6 +41,7 @@ export const TEAMS: TeamConfig[] = [
     shortName: 'MH-2',
     icsUrl: 'https://api.foys.io/competition/public-api/v1/teams/53e79bdc-023a-48b2-ab93-a1d094b7eebe/ics',
     enableReplacementFlow: true,
+    enableReplacementNameEntry: false,
   },
   {
     id: 'vs1',
@@ -45,6 +49,7 @@ export const TEAMS: TeamConfig[] = [
     shortName: 'VS-1',
     icsUrl: 'https://api.foys.io/competition/public-api/v1/teams/eaa86cf5-a01c-40af-bf8c-ea506d0d355c/ics',
     enableReplacementFlow: false,
+    enableReplacementNameEntry: false,
   },
   {
     id: 'vs2',
@@ -52,6 +57,7 @@ export const TEAMS: TeamConfig[] = [
     shortName: 'VS-2',
     icsUrl: 'https://api.foys.io/competition/public-api/v1/teams/14d3a7cb-137d-4ba3-935a-12302b5f4bb8/ics',
     enableReplacementFlow: true,
+    enableReplacementNameEntry: false,
   },
   {
     id: 'ms3',
@@ -59,6 +65,7 @@ export const TEAMS: TeamConfig[] = [
     shortName: 'MS-3',
     icsUrl: 'https://api.foys.io/competition/public-api/v1/teams/7852aa94-43c5-4f2d-b4d9-85fd46d25ca0/ics',
     enableReplacementFlow: false,
+    enableReplacementNameEntry: false,
   },
 ];
 
@@ -70,6 +77,7 @@ function normalizeTeamRow(row: {
   short_name: string;
   ics_url: string | null;
   enable_replacement_flow: boolean | null;
+  enable_replacement_name_entry?: boolean | null;
   active: boolean | null;
 }): TeamConfig {
   return {
@@ -78,6 +86,7 @@ function normalizeTeamRow(row: {
     shortName: row.short_name,
     icsUrl: row.ics_url || '',
     enableReplacementFlow: row.enable_replacement_flow === true,
+    enableReplacementNameEntry: row.enable_replacement_name_entry === true,
     active: row.active !== false,
   };
 }
@@ -91,16 +100,47 @@ export function setTeamConfigs(teams: TeamConfig[]): void {
 }
 
 export async function loadTeamConfigs(options: { includeInactive?: boolean } = {}): Promise<TeamConfig[]> {
-  const query = supabase
+  const withReplacementNameField = supabase
     .from('teams')
-    .select('id, name, short_name, ics_url, enable_replacement_flow, active')
+    .select('id, name, short_name, ics_url, enable_replacement_flow, enable_replacement_name_entry, active')
     .order('short_name');
 
   if (!options.includeInactive) {
-    query.eq('active', true);
+    withReplacementNameField.eq('active', true);
   }
 
-  const { data, error } = await query;
+  const withReplacementNameResult = await withReplacementNameField;
+
+  // During rollout we gracefully fallback when the new column is not available yet.
+  if (withReplacementNameResult.error && /enable_replacement_name_entry|column/i.test(withReplacementNameResult.error.message || '')) {
+    const fallbackQuery = supabase
+      .from('teams')
+      .select('id, name, short_name, ics_url, enable_replacement_flow, active')
+      .order('short_name');
+
+    if (!options.includeInactive) {
+      fallbackQuery.eq('active', true);
+    }
+
+    const { data: fallbackData, error: fallbackError } = await fallbackQuery;
+
+    if (fallbackError && /teams|relation|does not exist|schema cache/i.test(fallbackError.message || '')) {
+      return getTeamConfigs();
+    }
+
+    if (fallbackError) {
+      throw fallbackError;
+    }
+
+    const mappedFallback = (fallbackData || []).map((row) => normalizeTeamRow({
+      ...row,
+      enable_replacement_name_entry: false,
+    }));
+    setTeamConfigs(mappedFallback);
+    return getTeamConfigs();
+  }
+
+  const { data, error } = withReplacementNameResult;
 
   // During rollout we keep static fallback teams when DB table/migration is not available yet.
   if (error && /teams|relation|does not exist|schema cache/i.test(error.message || '')) {
@@ -123,4 +163,8 @@ export function getTeamConfig(teamId: string): TeamConfig | undefined {
 
 export function teamHasReplacementFlow(teamId: string): boolean {
   return getTeamConfig(teamId)?.enableReplacementFlow ?? false;
+}
+
+export function teamHasReplacementNameEntry(teamId: string): boolean {
+  return getTeamConfig(teamId)?.enableReplacementNameEntry ?? false;
 }

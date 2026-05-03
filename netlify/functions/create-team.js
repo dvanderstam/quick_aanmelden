@@ -57,6 +57,7 @@ exports.handler = async (event) => {
   const shortName = String(payload.shortName || '').trim();
   const icsUrl = String(payload.icsUrl || '').trim();
   const enableReplacementFlow = !!payload.enableReplacementFlow;
+  const enableReplacementNameEntry = !!payload.enableReplacementNameEntry;
   const active = payload.active !== false;
 
   if (!teamId || !name || !shortName) {
@@ -123,9 +124,10 @@ exports.handler = async (event) => {
       short_name: shortName,
       ics_url: icsUrl,
       enable_replacement_flow: enableReplacementFlow,
+      enable_replacement_name_entry: enableReplacementNameEntry,
       active,
     })
-    .select('id, name, short_name, ics_url, enable_replacement_flow, active')
+    .select('id, name, short_name, ics_url, enable_replacement_flow, enable_replacement_name_entry, active')
     .single();
 
   if (insertError) {
@@ -139,6 +141,7 @@ exports.handler = async (event) => {
       shortName: inserted.short_name,
       icsUrl: inserted.ics_url || '',
       enableReplacementFlow: inserted.enable_replacement_flow === true,
+      enableReplacementNameEntry: inserted.enable_replacement_name_entry === true,
       active: inserted.active !== false,
     },
   });
