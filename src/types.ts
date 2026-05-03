@@ -23,4 +23,6 @@ export interface Player {
   disclaimer_accepted?: boolean;
   team_ids?: string[];
   captain_team_ids?: string[];
+  not_counted_team_ids?: string[];
+  count_in_player_list?: boolean;
 }

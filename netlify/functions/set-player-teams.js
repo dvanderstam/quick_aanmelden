@@ -77,23 +77,54 @@ exports.handler = async function (event) {
   const playerId = Number(body.playerId);
   const requestedTeamIds = normalizeTeamIds(body.teamIds);
   const requestedCaptainIdsRaw = normalizeTeamIds(body.captainTeamIds);
+  const requestedNonCountedIdsRaw = normalizeTeamIds(body.nonCountedTeamIds);
   const requestedTeamSet = new Set(requestedTeamIds);
   const requestedCaptainIds = requestedCaptainIdsRaw.filter((teamId) => requestedTeamSet.has(teamId));
+  const requestedNonCountedIds = requestedNonCountedIdsRaw.filter((teamId) => requestedTeamSet.has(teamId));
 
   if (!Number.isInteger(playerId)) {
     return json(400, { error: 'playerId moet een integer zijn.' });
   }
 
-  const { data: existing, error: existingError } = await adminClient
+  let supportsCountInPlayerList = true;
+  let existingRows = [];
+
+  const existingWithCount = await adminClient
     .from('player_teams')
-    .select('team_id, is_team_captain')
+    .select('team_id, is_team_captain, count_in_player_list')
     .eq('player_id', playerId);
 
-  if (existingError) {
-    return json(500, { error: `Kon bestaande teams niet laden: ${existingError.message}` });
+  if (existingWithCount.error && /count_in_player_list/i.test(existingWithCount.error.message || '')) {
+    supportsCountInPlayerList = false;
+    const fallback = await adminClient
+      .from('player_teams')
+      .select('team_id, is_team_captain')
+      .eq('player_id', playerId);
+
+    if (fallback.error) {
+      return json(500, { error: `Kon bestaande teams niet laden: ${fallback.error.message}` });
+    }
+
+    existingRows = (fallback.data || []).map((row) => ({
+      ...row,
+      count_in_player_list: true,
+    }));
+  } else {
+    if (existingWithCount.error) {
+      return json(500, { error: `Kon bestaande teams niet laden: ${existingWithCount.error.message}` });
+    }
+    existingRows = (existingWithCount.data || []).map((row) => ({
+      ...row,
+      count_in_player_list: row.count_in_player_list !== false,
+    }));
   }
 
-  const existingRows = existing || [];
+  if (!supportsCountInPlayerList && requestedNonCountedIds.length > 0) {
+    return json(400, {
+      error: 'Database mist kolom count_in_player_list. Draai migration_v17_player_team_count_in_player_list.sql eerst.',
+    });
+  }
+
   const existingTeamIds = new Set(existingRows.map((row) => row.team_id));
 
   if (!isAdmin) {
@@ -111,13 +142,21 @@ exports.handler = async function (event) {
       requestedCaptainIdsRaw.filter((teamId) => managedSet.has(teamId) && existingTeamIds.has(teamId))
     );
 
-    const rows = existingRows.map((row) => ({
-      player_id: playerId,
-      team_id: row.team_id,
-      is_team_captain: managedSet.has(row.team_id)
-        ? requestedCaptainSet.has(row.team_id)
-        : !!row.is_team_captain,
-    }));
+    const rows = existingRows.map((row) => {
+      const baseRow = {
+        player_id: playerId,
+        team_id: row.team_id,
+        is_team_captain: managedSet.has(row.team_id)
+          ? requestedCaptainSet.has(row.team_id)
+          : !!row.is_team_captain,
+      };
+
+      if (!supportsCountInPlayerList) return baseRow;
+      return {
+        ...baseRow,
+        count_in_player_list: row.count_in_player_list !== false,
+      };
+    });
 
     if (rows.length > 0) {
       const { error: upsertError } = await adminClient
@@ -132,11 +171,17 @@ exports.handler = async function (event) {
     const captainTeamIds = rows
       .filter((row) => row.is_team_captain)
       .map((row) => row.team_id);
+    const nonCountedTeamIds = supportsCountInPlayerList
+      ? rows
+        .filter((row) => row.count_in_player_list === false)
+        .map((row) => row.team_id)
+      : [];
 
     return json(200, {
       success: true,
       teamIds: [...existingTeamIds],
       captainTeamIds,
+      nonCountedTeamIds,
     });
   }
 
@@ -155,11 +200,19 @@ exports.handler = async function (event) {
     }
   }
 
-  const rows = requestedTeamIds.map((teamId) => ({
-    player_id: playerId,
-    team_id: teamId,
-    is_team_captain: requestedCaptainIds.includes(teamId),
-  }));
+  const rows = requestedTeamIds.map((teamId) => {
+    const baseRow = {
+      player_id: playerId,
+      team_id: teamId,
+      is_team_captain: requestedCaptainIds.includes(teamId),
+    };
+
+    if (!supportsCountInPlayerList) return baseRow;
+    return {
+      ...baseRow,
+      count_in_player_list: !requestedNonCountedIds.includes(teamId),
+    };
+  });
 
   if (rows.length > 0) {
     const { error: upsertError } = await adminClient
@@ -171,5 +224,10 @@ exports.handler = async function (event) {
     }
   }
 
-  return json(200, { success: true, teamIds: requestedTeamIds, captainTeamIds: requestedCaptainIds });
+  return json(200, {
+    success: true,
+    teamIds: requestedTeamIds,
+    captainTeamIds: requestedCaptainIds,
+    nonCountedTeamIds: supportsCountInPlayerList ? requestedNonCountedIds : [],
+  });
 };

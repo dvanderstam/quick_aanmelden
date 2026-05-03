@@ -87,9 +87,25 @@ export default function GameDetailScreen() {
 
   const loadData = useCallback(async () => {
     if (!gameId) return;
-    const fetchedPlayers = await getPlayersForTeam(teamId);
-    setPlayers(fetchedPlayers);
-    const playerIds = fetchedPlayers.map((p) => p.id);
+    const [fetchedPlayers, player] = await Promise.all([
+      getPlayersForTeam(teamId),
+      getCurrentPlayer(),
+    ]);
+
+    setCurrentPlayer(player);
+
+    let playersForView = fetchedPlayers;
+    const isCaptainForTeam = !!player?.captain_team_ids?.includes(teamId);
+    const isCurrentPlayerVisible = !!player && fetchedPlayers.some((p) => p.id === player.id);
+
+    if (player && isCaptainForTeam && !isCurrentPlayerVisible) {
+      playersForView = [...fetchedPlayers, { ...player, count_in_player_list: false }]
+        .sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    setPlayers(playersForView);
+
+    const playerIds = playersForView.map((p) => p.id);
     const result = await getAllAttendanceForGame(gameId, playerIds);
     setAttendanceState(result.statuses);
     setTimestamps(result.timestamps);
@@ -99,12 +115,23 @@ export default function GameDetailScreen() {
 
   useEffect(() => {
     loadData();
-    getCurrentPlayer().then(setCurrentPlayer);
   }, [loadData]);
+
+  const countAbsentCountedPlayers = useCallback((statuses: Record<number, AttendanceStatus>) => {
+    const countedPlayerIdSet = new Set(
+      players
+        .filter((player) => player.count_in_player_list !== false)
+        .map((player) => player.id)
+    );
+
+    return Object.entries(statuses).filter(([playerId, status]) => (
+      status === 'absent' && countedPlayerIdSet.has(Number(playerId))
+    )).length;
+  }, [players]);
 
   const checkAbsenceWarning = (newAttendance: Record<number, AttendanceStatus>) => {
     if (!replacementFlowEnabled) return;
-    const absentTotal = Object.values(newAttendance).filter((s) => s === 'absent').length;
+    const absentTotal = countAbsentCountedPlayers(newAttendance);
     if (absentTotal >= 3) {
       const msg = `Je bent de ${absentTotal}e afmelder. Graag een vervanger zoeken. Meld wie het is in de app en aan Bas.`;
       if (Platform.OS === 'web') {
@@ -122,7 +149,7 @@ export default function GameDetailScreen() {
     const next = order[nextIndex];
 
     const updated = { ...attendance, [playerId]: next };
-    const absentCount = Object.values(updated).filter((s) => s === 'absent').length;
+  const absentCount = countAbsentCountedPlayers(updated);
     const shouldFlag = next === 'absent' && absentCount >= 3 && replacementFlowEnabled;
     const clearFlag = next !== 'absent';
 
@@ -146,7 +173,7 @@ export default function GameDetailScreen() {
     const newStatus = current === status ? null : status;
 
     const updated = { ...attendance, [playerId]: newStatus };
-    const absentCount = Object.values(updated).filter((s) => s === 'absent').length;
+  const absentCount = countAbsentCountedPlayers(updated);
     const shouldFlag = newStatus === 'absent' && absentCount >= 3 && replacementFlowEnabled;
     const clearFlag = newStatus !== 'absent';
 
@@ -232,9 +259,12 @@ export default function GameDetailScreen() {
     );
   }
 
-  const presentCount = Object.values(attendance).filter((s) => s === 'present').length;
-  const absentCount = Object.values(attendance).filter((s) => s === 'absent').length;
-  const uncertainCount = Object.values(attendance).filter((s) => s === 'uncertain').length;
+  const countedPlayerIds = players
+    .filter((player) => player.count_in_player_list !== false)
+    .map((player) => player.id);
+  const presentCount = countedPlayerIds.filter((playerId) => attendance[playerId] === 'present').length;
+  const absentCount = countedPlayerIds.filter((playerId) => attendance[playerId] === 'absent').length;
+  const uncertainCount = countedPlayerIds.filter((playerId) => attendance[playerId] === 'uncertain').length;
   const isPastGame = game.endDate < new Date();
   const isSmallScreen = width < 520;
   const popoverPlayer = players.find((p) => p.id === popoverPlayerId) ?? null;
@@ -359,6 +389,9 @@ export default function GameDetailScreen() {
                       ]}>
                         {STATUS_OPTIONS.find(o => o.value === status)?.label}
                       </Text>
+                    )}
+                    {player.count_in_player_list === false && (
+                      <Text style={styles.playerMetaText}>Captain (niet meetellen in spelerslijst)</Text>
                     )}
                   </View>
                 </View>
@@ -757,6 +790,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     marginTop: 1,
+  },
+  playerMetaText: {
+    marginTop: 1,
+    fontSize: 11,
+    color: M3.onSurfaceVariant,
+    fontStyle: 'italic',
   },
   statusButtons: {
     flexDirection: 'row',

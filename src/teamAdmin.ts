@@ -169,8 +169,9 @@ export async function resetPlayerPasswordToDefault(playerId: number): Promise<{ 
 export async function setPlayerTeams(
   playerId: number,
   teamIds: string[],
-  captainTeamIds: string[] = []
-): Promise<{ teamIds: string[]; captainTeamIds: string[] }> {
+  captainTeamIds: string[] = [],
+  nonCountedTeamIds: string[] = []
+): Promise<{ teamIds: string[]; captainTeamIds: string[]; nonCountedTeamIds: string[] }> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -185,7 +186,7 @@ export async function setPlayerTeams(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${session.access_token}`,
     },
-    body: JSON.stringify({ playerId, teamIds, captainTeamIds }),
+    body: JSON.stringify({ playerId, teamIds, captainTeamIds, nonCountedTeamIds }),
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -196,6 +197,7 @@ export async function setPlayerTeams(
   return {
     teamIds: Array.isArray(payload.teamIds) ? payload.teamIds : teamIds,
     captainTeamIds: Array.isArray(payload.captainTeamIds) ? payload.captainTeamIds : captainTeamIds,
+    nonCountedTeamIds: Array.isArray(payload.nonCountedTeamIds) ? payload.nonCountedTeamIds : nonCountedTeamIds,
   };
 }
 

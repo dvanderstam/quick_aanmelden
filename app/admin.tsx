@@ -110,6 +110,7 @@ export default function AdminScreen() {
   const [teamModalPlayer, setTeamModalPlayer] = useState<Player | null>(null);
   const [draftTeamIds, setDraftTeamIds] = useState<string[]>([]);
   const [draftCaptainTeamIds, setDraftCaptainTeamIds] = useState<string[]>([]);
+  const [draftNonCountedTeamIds, setDraftNonCountedTeamIds] = useState<string[]>([]);
   const [savingTeams, setSavingTeams] = useState(false);
   const [editPlayerVisible, setEditPlayerVisible] = useState(false);
   const [editPlayerTarget, setEditPlayerTarget] = useState<Player | null>(null);
@@ -265,6 +266,7 @@ export default function AdminScreen() {
     setTeamModalPlayer(player);
     setDraftTeamIds(player.team_ids || []);
     setDraftCaptainTeamIds(player.captain_team_ids || []);
+    setDraftNonCountedTeamIds(player.not_counted_team_ids || []);
     setErrorMsg(null);
     setTeamModalVisible(true);
   }, [canAssignCaptains, captainManagedTeamIdSet, currentPlayer, isAdmin]);
@@ -282,6 +284,7 @@ export default function AdminScreen() {
     setDraftTeamIds((prev) => {
       if (prev.includes(teamId)) {
         setDraftCaptainTeamIds((captains) => captains.filter((id) => id !== teamId));
+        setDraftNonCountedTeamIds((excluded) => excluded.filter((id) => id !== teamId));
         return prev.filter((id) => id !== teamId);
       }
       return [...prev, teamId];
@@ -296,6 +299,15 @@ export default function AdminScreen() {
       return [...prev, teamId];
     });
   }, [captainManagedTeamIdSet, draftTeamIds, isAdmin]);
+
+  const toggleDraftNonCountedTeam = useCallback((teamId: string) => {
+    if (!draftTeamIds.includes(teamId)) return;
+    if (!isAdmin) return;
+    setDraftNonCountedTeamIds((prev) => {
+      if (prev.includes(teamId)) return prev.filter((id) => id !== teamId);
+      return [...prev, teamId];
+    });
+  }, [draftTeamIds, isAdmin]);
 
   const confirmTeamRemovals = useCallback(async (teamIds: string[]) => {
     if (teamIds.length === 0) return true;
@@ -338,6 +350,7 @@ export default function AdminScreen() {
       : originalTeamIds.filter((teamId) => !removedManagedTeamIds.includes(teamId));
     const removedTeamIds = originalTeamIds.filter((teamId) => !teamIdsForSave.includes(teamId));
     const captainTeamIdsForSave = draftCaptainTeamIds.filter((teamId) => teamIdsForSave.includes(teamId));
+    const nonCountedTeamIdsForSave = draftNonCountedTeamIds.filter((teamId) => teamIdsForSave.includes(teamId));
 
     const confirmed = await confirmTeamRemovals(removedTeamIds);
     if (!confirmed) return;
@@ -349,10 +362,20 @@ export default function AdminScreen() {
         await Promise.all(removedTeamIds.map((teamId) => removePlayerFromTeam(teamModalPlayer.id, teamId)));
       }
 
-      const membership = await setPlayerTeams(teamModalPlayer.id, teamIdsForSave, captainTeamIdsForSave);
+      const membership = await setPlayerTeams(
+        teamModalPlayer.id,
+        teamIdsForSave,
+        captainTeamIdsForSave,
+        nonCountedTeamIdsForSave
+      );
       setPlayers((prev) => prev.map((p) => (
         p.id === teamModalPlayer.id
-          ? { ...p, team_ids: membership.teamIds, captain_team_ids: membership.captainTeamIds }
+          ? {
+              ...p,
+              team_ids: membership.teamIds,
+              captain_team_ids: membership.captainTeamIds,
+              not_counted_team_ids: membership.nonCountedTeamIds,
+            }
           : p
       )));
       setTeamModalVisible(false);
@@ -362,7 +385,7 @@ export default function AdminScreen() {
     } finally {
       setSavingTeams(false);
     }
-  }, [captainManagedTeamIdSet, confirmTeamRemovals, currentPlayer, draftCaptainTeamIds, draftTeamIds, isAdmin, teamModalPlayer]);
+  }, [captainManagedTeamIdSet, confirmTeamRemovals, currentPlayer, draftCaptainTeamIds, draftNonCountedTeamIds, draftTeamIds, isAdmin, teamModalPlayer]);
 
   const closeEditPlayerModal = useCallback(() => {
     setEditPlayerVisible(false);
@@ -633,6 +656,18 @@ export default function AdminScreen() {
   const activeCount = filteredPlayers.filter((p) => p.active).length;
   const inactiveCount = filteredPlayers.length - activeCount;
 
+  const selectedCaptainTeamNames = useMemo(() => {
+    return draftCaptainTeamIds
+      .map((teamId) => getTeamConfig(teamId)?.shortName || teamId)
+      .join(', ');
+  }, [draftCaptainTeamIds]);
+
+  const selectedNonCountedTeamNames = useMemo(() => {
+    return draftNonCountedTeamIds
+      .map((teamId) => getTeamConfig(teamId)?.shortName || teamId)
+      .join(', ');
+  }, [draftNonCountedTeamIds]);
+
   if (!currentPlayer) return null;
 
   return (
@@ -717,6 +752,19 @@ export default function AdminScreen() {
               <Text style={styles.emptyText}>Geen spelers gevonden.</Text>
             }
             renderItem={({ item }) => {
+              const visibleCaptainTeamIds = (item.captain_team_ids || []).filter(
+                (teamId) => isAdmin || manageableTeamIdSet.has(teamId)
+              );
+              const visibleNonCountedTeamIds = (item.not_counted_team_ids || []).filter(
+                (teamId) => isAdmin || manageableTeamIdSet.has(teamId)
+              );
+              const captainTeamsLabel = visibleCaptainTeamIds
+                .map((teamId) => getTeamConfig(teamId)?.shortName || teamId)
+                .join(', ');
+              const nonCountedTeamsLabel = visibleNonCountedTeamIds
+                .map((teamId) => getTeamConfig(teamId)?.shortName || teamId)
+                .join(', ');
+
               return (
               <View style={[styles.playerRow, !item.active && styles.playerRowInactive]}>
                 <View style={styles.playerInfo}>
@@ -731,17 +779,28 @@ export default function AdminScreen() {
                       (item.team_ids || []).map((teamId) => {
                         const team = getTeamConfig(teamId);
                         if (!isAdmin && !manageableTeamIdSet.has(teamId)) return null;
-                        const isCaptain = (item.captain_team_ids || []).includes(teamId);
                         return (
                           <View key={`${item.id}-${teamId}`} style={styles.teamChipInline}>
                             <Text style={styles.teamChipInlineText}>
-                              {team?.shortName || teamId}{isCaptain ? ' (C)' : ''}
+                              {team?.shortName || teamId}
                             </Text>
                           </View>
                         );
                       })
                     )}
                   </View>
+                  {visibleCaptainTeamIds.length > 0 && (
+                    <View style={styles.captainInfoRow}>
+                      <MaterialCommunityIcons name="crown" size={14} color={M3.warning} />
+                      <Text style={styles.captainInfoText}>Captain: {captainTeamsLabel}</Text>
+                    </View>
+                  )}
+                  {visibleNonCountedTeamIds.length > 0 && (
+                    <View style={styles.nonCountedInfoRow}>
+                      <MaterialCommunityIcons name="account-off-outline" size={14} color={M3.onSurfaceVariant} />
+                      <Text style={styles.nonCountedInfoText}>Niet meetellen: {nonCountedTeamsLabel}</Text>
+                    </View>
+                  )}
                   {!item.active && (
                     <View style={styles.inactiveBadge}>
                       <Text style={styles.inactiveBadgeText}>Inactief</Text>
@@ -836,18 +895,30 @@ export default function AdminScreen() {
               <Text style={styles.modalTitle}>{isAdmin ? 'Teams beheren' : 'Team/Captain beheren'}</Text>
               <Text style={styles.modalSubtitle}>{teamModalPlayer?.name || ''}</Text>
               <Text style={styles.modalHintText}>Vink een team uit om de speler uit dat team te verwijderen.</Text>
+              <Text style={styles.modalCaptainSummaryText}>
+                Captainstatus: {selectedCaptainTeamNames || 'Geen'}
+              </Text>
+              <Text style={styles.modalNoCountSummaryText}>
+                Niet meetellen: {selectedNonCountedTeamNames || 'Geen'}
+              </Text>
 
               <View style={styles.modalTeamList}>
                 {modalTeams.map((team) => {
                   const selected = draftTeamIds.includes(team.id);
+                  const isCaptain = selected && draftCaptainTeamIds.includes(team.id);
+                  const isNonCounted = selected && draftNonCountedTeamIds.includes(team.id);
                   return (
                     <View
                       key={team.id}
                       style={[styles.modalTeamRow, selected && styles.modalTeamRowActive]}
                     >
-                      <Text style={[styles.modalTeamRowText, selected && styles.modalTeamRowTextActive]}>
-                        {team.shortName}
-                      </Text>
+                      <View style={styles.modalTeamLabelColumn}>
+                        <Text style={[styles.modalTeamRowText, selected && styles.modalTeamRowTextActive]}>
+                          {team.shortName}
+                        </Text>
+                        {isCaptain && <Text style={styles.modalCaptainBadgeText}>Captain</Text>}
+                        {isNonCounted && <Text style={styles.modalNoCountBadgeText}>Niet meetellen</Text>}
+                      </View>
                       <View style={styles.modalTeamActions}>
                         <TooltipIconButton
                           tooltip={selected ? 'Verwijder uit team' : 'Voeg toe aan team'}
@@ -872,6 +943,21 @@ export default function AdminScreen() {
                             name={(selected && draftCaptainTeamIds.includes(team.id)) ? 'crown' : 'crown-outline'}
                             size={18}
                             color={selected ? M3.warning : M3.outline}
+                          />
+                        </TooltipIconButton>
+                        <TooltipIconButton
+                          tooltip={draftNonCountedTeamIds.includes(team.id)
+                            ? 'Wel meetellen in spelerslijst'
+                            : 'Niet meetellen in spelerslijst'}
+                          onPress={() => toggleDraftNonCountedTeam(team.id)}
+                          disabled={!selected || !isAdmin}
+                          style={styles.modalIconTapTarget}
+                          accessibilityLabel={`Niet meetellen in spelerslijst voor ${team.shortName} ${draftNonCountedTeamIds.includes(team.id) ? 'uitzetten' : 'aanzetten'}`}
+                        >
+                          <MaterialCommunityIcons
+                            name={(selected && draftNonCountedTeamIds.includes(team.id)) ? 'account-off' : 'account-off-outline'}
+                            size={18}
+                            color={selected ? M3.onSurfaceVariant : M3.outline}
                           />
                         </TooltipIconButton>
                       </View>
@@ -1174,6 +1260,28 @@ const styles = StyleSheet.create({
     ...typography.labelSmall,
     color: M3.onSecondaryContainer,
   },
+  captainInfoRow: {
+    marginTop: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  captainInfoText: {
+    ...typography.labelSmall,
+    color: M3.warning,
+    fontWeight: '600',
+  },
+  nonCountedInfoRow: {
+    marginTop: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  nonCountedInfoText: {
+    ...typography.labelSmall,
+    color: M3.onSurfaceVariant,
+    fontWeight: '600',
+  },
   noTeamText: {
     ...typography.labelSmall,
     color: M3.outline,
@@ -1273,6 +1381,19 @@ const styles = StyleSheet.create({
     marginTop: -spacing.xs,
     marginBottom: spacing.sm,
   },
+  modalCaptainSummaryText: {
+    ...typography.bodySmall,
+    color: M3.warning,
+    marginBottom: spacing.sm,
+    fontWeight: '600',
+  },
+  modalNoCountSummaryText: {
+    ...typography.bodySmall,
+    color: M3.onSurfaceVariant,
+    marginTop: -spacing.xs,
+    marginBottom: spacing.sm,
+    fontWeight: '600',
+  },
   modalTeamList: {
     gap: spacing.xs,
   },
@@ -1290,6 +1411,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     alignItems: 'center',
+  },
+  modalTeamLabelColumn: {
+    flex: 1,
+    paddingRight: spacing.sm,
+  },
+  modalCaptainBadgeText: {
+    ...typography.labelSmall,
+    color: M3.warning,
+    marginTop: 2,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  modalNoCountBadgeText: {
+    ...typography.labelSmall,
+    color: M3.onSurfaceVariant,
+    marginTop: 2,
+    fontWeight: '700',
+    textTransform: 'uppercase',
   },
   modalIconTapTarget: {
     width: 24,

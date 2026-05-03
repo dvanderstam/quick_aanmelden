@@ -253,6 +253,7 @@ export default function GamesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savingGameId, setSavingGameId] = useState<string | null>(null);
+  const [currentPlayerCountedInTeam, setCurrentPlayerCountedInTeam] = useState(true);
 
   useEffect(() => {
     getCurrentPlayer().then((player) => {
@@ -294,12 +295,20 @@ export default function GamesScreen() {
       setGames(fetchedGames);
 
       const pIds = fetchedPlayers.map((p) => p.id);
+      const canSetOwnStatus = !!(currentPlayer && selectedTeam && (
+        currentPlayer.role === 'admin' || currentPlayer.team_ids?.includes(selectedTeam.id)
+      ));
+      const isCurrentPlayerCounted = !!(currentPlayer && (
+        currentPlayer.role === 'admin' || pIds.includes(currentPlayer.id)
+      ));
+      setCurrentPlayerCountedInTeam(isCurrentPlayerCounted);
+
       const summaryEntries = await Promise.all(
         fetchedGames.map(async (game) => [game.id, await getAttendanceSummary(game.id, pIds)] as const)
       );
       setSummaries(Object.fromEntries(summaryEntries));
 
-      if (currentPlayer && (pIds.includes(currentPlayer.id) || currentPlayer.role === 'admin')) {
+      if (canSetOwnStatus && currentPlayer) {
         const statusEntries = await Promise.all(
           fetchedGames.map(async (game) => [game.id, await getAttendance(game.id, currentPlayer.id)] as const)
         );
@@ -368,7 +377,9 @@ export default function GamesScreen() {
       );
 
       setOwnStatuses((prev) => ({ ...prev, [gameId]: nextStatus }));
-      updateSummaryForOwnStatusChange(gameId, previousStatus, nextStatus);
+      if (currentPlayerCountedInTeam) {
+        updateSummaryForOwnStatusChange(gameId, previousStatus, nextStatus);
+      }
 
       if (shouldFlag) {
         const message = `Je bent de ${nextAbsentCount}e afmelder. Graag een vervanger zoeken. Meld wie het is in de app en aan Bas.`;
@@ -381,7 +392,7 @@ export default function GamesScreen() {
     } finally {
       setSavingGameId(null);
     }
-  }, [currentPlayer, ownStatuses, selectedTeam, summaries, updateSummaryForOwnStatusChange]);
+  }, [currentPlayer, currentPlayerCountedInTeam, ownStatuses, selectedTeam, summaries, updateSummaryForOwnStatusChange]);
 
   useEffect(() => {
     if (selectedTeam) {

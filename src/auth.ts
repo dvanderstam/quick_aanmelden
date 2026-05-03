@@ -123,10 +123,30 @@ export async function getCurrentPlayer(): Promise<Player | null> {
   if (player.active === false) return null;
 
   // Fetch team memberships
-  const { data: teams } = await supabase
+  let teams: Array<{ team_id: string; is_team_captain?: boolean; count_in_player_list?: boolean }> = [];
+  const teamsWithCount = await supabase
     .from('player_teams')
-    .select('team_id, is_team_captain')
+    .select('team_id, is_team_captain, count_in_player_list')
     .eq('player_id', player.id);
+
+  if (teamsWithCount.error && /count_in_player_list/i.test(teamsWithCount.error.message || '')) {
+    const fallback = await supabase
+      .from('player_teams')
+      .select('team_id, is_team_captain')
+      .eq('player_id', player.id);
+
+    if (fallback.error) throw fallback.error;
+    teams = (fallback.data || []).map((row: { team_id: string; is_team_captain?: boolean }) => ({
+      ...row,
+      count_in_player_list: true,
+    }));
+  } else {
+    if (teamsWithCount.error) throw teamsWithCount.error;
+    teams = (teamsWithCount.data || []).map((row: { team_id: string; is_team_captain?: boolean; count_in_player_list?: boolean }) => ({
+      ...row,
+      count_in_player_list: row.count_in_player_list !== false,
+    }));
+  }
 
   return {
     ...normalizePlayer(player),
@@ -134,6 +154,10 @@ export async function getCurrentPlayer(): Promise<Player | null> {
     captain_team_ids:
       teams
         ?.filter((t: { team_id: string; is_team_captain?: boolean }) => !!t.is_team_captain)
+        .map((t: { team_id: string }) => t.team_id) || [],
+    not_counted_team_ids:
+      teams
+        ?.filter((t: { team_id: string; count_in_player_list?: boolean }) => t.count_in_player_list === false)
         .map((t: { team_id: string }) => t.team_id) || [],
   };
 }
@@ -147,21 +171,63 @@ export async function getAllPlayers(): Promise<Player[]> {
   if (error) throw error;
   const players = (data || []).map(normalizePlayer);
 
-  const { data: memberships, error: membershipsError } = await supabase
+  let memberships: Array<{
+    player_id: number;
+    team_id: string;
+    is_team_captain?: boolean;
+    count_in_player_list?: boolean;
+  }> = [];
+
+  const membershipsWithCount = await supabase
     .from('player_teams')
-    .select('player_id, team_id, is_team_captain');
+    .select('player_id, team_id, is_team_captain, count_in_player_list');
 
-  if (membershipsError) throw membershipsError;
+  if (membershipsWithCount.error && /count_in_player_list/i.test(membershipsWithCount.error.message || '')) {
+    const fallback = await supabase
+      .from('player_teams')
+      .select('player_id, team_id, is_team_captain');
 
-  const membershipByPlayer = new Map<number, { team_ids: string[]; captain_team_ids: string[] }>();
+    if (fallback.error) throw fallback.error;
+    memberships = (fallback.data || []).map((row: {
+      player_id: number;
+      team_id: string;
+      is_team_captain?: boolean;
+    }) => ({
+      ...row,
+      count_in_player_list: true,
+    }));
+  } else {
+    if (membershipsWithCount.error) throw membershipsWithCount.error;
+    memberships = (membershipsWithCount.data || []).map((row: {
+      player_id: number;
+      team_id: string;
+      is_team_captain?: boolean;
+      count_in_player_list?: boolean;
+    }) => ({
+      ...row,
+      count_in_player_list: row.count_in_player_list !== false,
+    }));
+  }
+
+  const membershipByPlayer = new Map<number, {
+    team_ids: string[];
+    captain_team_ids: string[];
+    not_counted_team_ids: string[];
+  }>();
   for (const row of memberships || []) {
     const playerId = row.player_id as number;
     const teamId = row.team_id as string;
     const isCaptain = !!row.is_team_captain;
+    const isCounted = row.count_in_player_list !== false;
 
-    const existing = membershipByPlayer.get(playerId) || { team_ids: [], captain_team_ids: [] };
+    const existing = membershipByPlayer.get(playerId) || {
+      team_ids: [],
+      captain_team_ids: [],
+      not_counted_team_ids: [],
+    };
     existing.team_ids.push(teamId);
     if (isCaptain) existing.captain_team_ids.push(teamId);
+    if (!isCounted) existing.not_counted_team_ids.push(teamId);
     membershipByPlayer.set(playerId, existing);
   }
 
@@ -171,18 +237,40 @@ export async function getAllPlayers(): Promise<Player[]> {
       ...player,
       team_ids: membership?.team_ids || [],
       captain_team_ids: membership?.captain_team_ids || [],
+      not_counted_team_ids: membership?.not_counted_team_ids || [],
     };
   });
 }
 
 export async function getPlayersForTeam(teamId: string): Promise<Player[]> {
-  const { data, error } = await supabase
+  let memberships: Array<{ player_id: number; count_in_player_list?: boolean }> = [];
+  const membershipsWithCount = await supabase
     .from('player_teams')
-    .select('player_id')
+    .select('player_id, count_in_player_list')
     .eq('team_id', teamId);
 
-  if (error) throw error;
-  const playerIds = data?.map((r: { player_id: number }) => r.player_id) || [];
+  if (membershipsWithCount.error && /count_in_player_list/i.test(membershipsWithCount.error.message || '')) {
+    const fallback = await supabase
+      .from('player_teams')
+      .select('player_id')
+      .eq('team_id', teamId);
+
+    if (fallback.error) throw fallback.error;
+    memberships = (fallback.data || []).map((row: { player_id: number }) => ({
+      ...row,
+      count_in_player_list: true,
+    }));
+  } else {
+    if (membershipsWithCount.error) throw membershipsWithCount.error;
+    memberships = (membershipsWithCount.data || []).map((row: { player_id: number; count_in_player_list?: boolean }) => ({
+      ...row,
+      count_in_player_list: row.count_in_player_list !== false,
+    }));
+  }
+
+  const playerIds = memberships
+    .filter((membership) => membership.count_in_player_list !== false)
+    .map((membership) => membership.player_id);
   if (playerIds.length === 0) return [];
 
   let { data: players, error: pError } = await supabase
@@ -205,17 +293,39 @@ export async function getPlayersForTeam(teamId: string): Promise<Player[]> {
   }
 
   if (pError) throw pError;
-  return (players || []).map(normalizePlayer).filter((p) => p.active !== false);
+  return (players || [])
+    .map(normalizePlayer)
+    .filter((p) => p.active !== false)
+    .map((p) => ({ ...p, count_in_player_list: true }));
 }
 
 export async function getAllPlayersForTeam(teamId: string): Promise<Player[]> {
-  const { data, error } = await supabase
+  let memberships: Array<{ player_id: number; count_in_player_list?: boolean }> = [];
+  const withCount = await supabase
     .from('player_teams')
-    .select('player_id')
+    .select('player_id, count_in_player_list')
     .eq('team_id', teamId);
 
-  if (error) throw error;
-  const playerIds = data?.map((r: { player_id: number }) => r.player_id) || [];
+  if (withCount.error && /count_in_player_list/i.test(withCount.error.message || '')) {
+    const fallback = await supabase
+      .from('player_teams')
+      .select('player_id')
+      .eq('team_id', teamId);
+
+    if (fallback.error) throw fallback.error;
+    memberships = (fallback.data || []).map((row: { player_id: number }) => ({
+      ...row,
+      count_in_player_list: true,
+    }));
+  } else {
+    if (withCount.error) throw withCount.error;
+    memberships = (withCount.data || []).map((row: { player_id: number; count_in_player_list?: boolean }) => ({
+      ...row,
+      count_in_player_list: row.count_in_player_list !== false,
+    }));
+  }
+
+  const playerIds = memberships.map((r) => r.player_id);
   if (playerIds.length === 0) return [];
 
   const { data: players, error: pError } = await supabase
@@ -225,7 +335,15 @@ export async function getAllPlayersForTeam(teamId: string): Promise<Player[]> {
     .order('name');
 
   if (pError) throw pError;
-  return (players || []).map(normalizePlayer);
+  const countByPlayer = new Map<number, boolean>();
+  for (const row of memberships || []) {
+    countByPlayer.set(row.player_id as number, row.count_in_player_list !== false);
+  }
+
+  return (players || []).map(normalizePlayer).map((player) => ({
+    ...player,
+    count_in_player_list: countByPlayer.get(player.id) !== false,
+  }));
 }
 
 export function canManageTeam(currentPlayer: Player, teamId: string): boolean {
