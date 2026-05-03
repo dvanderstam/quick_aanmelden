@@ -25,6 +25,7 @@ import {
   markSubstitute,
 } from '../../src/storage';
 import { getCurrentPlayer, canEditPlayer, canManageTeam, getPlayersForTeam, signOut } from '../../src/auth';
+import { getTeams } from '../../src/teamAdmin';
 import { M3, radii, spacing, typography } from '../../src/theme';
 import { QUICK_LOGO_URL, TEAM_NAME, teamHasReplacementFlow } from '../../src/config';
 import { DisclaimerFooter } from '../../src/DisclaimerFooter';
@@ -76,7 +77,7 @@ export default function GameDetailScreen() {
 
   const gameId = params.id;
   const teamId = params.teamId || 'ms1';
-  const replacementFlowEnabled = teamHasReplacementFlow(teamId);
+  const [replacementFlowEnabled, setReplacementFlowEnabled] = useState(teamHasReplacementFlow(teamId));
   const [attendance, setAttendanceState] = useState<Record<number, AttendanceStatus>>({});
   const [timestamps, setTimestamps] = useState<Record<number, string | null>>({});
   const [needsReplacement, setNeedsReplacementState] = useState<Record<number, boolean>>({});
@@ -116,6 +117,26 @@ export default function GameDetailScreen() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getTeams(false)
+      .then(() => {
+        if (!cancelled) {
+          setReplacementFlowEnabled(teamHasReplacementFlow(teamId));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setReplacementFlowEnabled(teamHasReplacementFlow(teamId));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [teamId]);
 
   const countAbsentCountedPlayers = useCallback((statuses: Record<number, AttendanceStatus>) => {
     const countedPlayerIdSet = new Set(
@@ -351,7 +372,7 @@ export default function GameDetailScreen() {
             const status = attendance[player.id] || null;
             const editable = currentPlayer ? canEditPlayer(currentPlayer, player.id, teamId) : false;
             return (
-              <View style={[styles.playerRow, !editable && styles.playerRowDisabled]}>
+              <View style={[styles.playerRow, isSmallScreen && styles.playerRowMobile, !editable && styles.playerRowDisabled]}>
                 <View style={styles.playerInfo}>
                   <View style={styles.avatarWrapper}>
                     <View style={[
@@ -373,8 +394,8 @@ export default function GameDetailScreen() {
                       </TouchableOpacity>
                     )}
                   </View>
-                  <View>
-                    <Text style={styles.playerName}>
+                  <View style={styles.playerTextBlock}>
+                    <Text style={styles.playerName} numberOfLines={1} ellipsizeMode="tail">
                       {player.name}
                       {substitutes[player.id] && (
                         <Text style={styles.substituteLabel}> (vervangende speler)</Text>
@@ -395,39 +416,42 @@ export default function GameDetailScreen() {
                     )}
                   </View>
                 </View>
-                <View style={styles.statusButtons}>
-                  {STATUS_OPTIONS.map((opt) => (
-                    <TouchableOpacity
-                      key={opt.value}
-                      disabled={!editable}
-                      style={[
-                        styles.statusBtn,
-                        status === opt.value && { backgroundColor: opt.bg, borderColor: opt.active },
-                        !editable && styles.statusBtnDisabled,
-                      ]}
-                      onPress={() => handleSetStatus(player.id, opt.value)}
-                    >
-                      <MaterialCommunityIcons
-                        name={opt.icon as any}
-                        size={20}
-                        color={status === opt.value ? opt.active : M3.onSurfaceVariant}
-                        style={[!editable && styles.statusEmojiDisabled]}
-                      />
-                    </TouchableOpacity>
-                  ))}
+                <View style={[styles.playerRight, isSmallScreen && styles.playerRightMobile]}>
+                  <View style={[styles.statusButtons, isSmallScreen && styles.statusButtonsMobile]}>
+                    {STATUS_OPTIONS.map((opt) => (
+                      <TouchableOpacity
+                        key={opt.value}
+                        disabled={!editable}
+                        style={[
+                          styles.statusBtn,
+                          isSmallScreen && styles.statusBtnMobile,
+                          status === opt.value && { backgroundColor: opt.bg, borderColor: opt.active },
+                          !editable && styles.statusBtnDisabled,
+                        ]}
+                        onPress={() => handleSetStatus(player.id, opt.value)}
+                      >
+                        <MaterialCommunityIcons
+                          name={opt.icon as any}
+                          size={20}
+                          color={status === opt.value ? opt.active : M3.onSurfaceVariant}
+                          style={[!editable && styles.statusEmojiDisabled]}
+                        />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  {timestamps[player.id] && (
+                    <Text style={[styles.timestampText, isSmallScreen && styles.timestampTextMobile]}>
+                      {(() => {
+                        const d = new Date(timestamps[player.id]!);
+                        const day = d.getDate().toString().padStart(2, '0');
+                        const month = (d.getMonth() + 1).toString().padStart(2, '0');
+                        const hours = d.getHours().toString().padStart(2, '0');
+                        const minutes = d.getMinutes().toString().padStart(2, '0');
+                        return `${day}-${month} ${hours}:${minutes}`;
+                      })()}
+                    </Text>
+                  )}
                 </View>
-                {timestamps[player.id] && (
-                  <Text style={styles.timestampText}>
-                    {(() => {
-                      const d = new Date(timestamps[player.id]!);
-                      const day = d.getDate().toString().padStart(2, '0');
-                      const month = (d.getMonth() + 1).toString().padStart(2, '0');
-                      const hours = d.getHours().toString().padStart(2, '0');
-                      const minutes = d.getMinutes().toString().padStart(2, '0');
-                      return `${day}-${month} ${hours}:${minutes}`;
-                    })()}
-                  </Text>
-                )}
               </View>
             );
           }}
@@ -653,10 +677,19 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: radii.lg,
   },
+  playerRowMobile: {
+    alignItems: 'flex-start',
+  },
   playerInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    minWidth: 0,
+    marginRight: spacing.sm,
+  },
+  playerTextBlock: {
+    flex: 1,
+    minWidth: 0,
   },
   avatarBadge: {
     width: 40,
@@ -779,6 +812,7 @@ const styles = StyleSheet.create({
     ...typography.bodyLarge,
     fontWeight: '500',
     color: M3.onSurface,
+    flexShrink: 1,
   },
   substituteLabel: {
     fontSize: 12,
@@ -797,9 +831,19 @@ const styles = StyleSheet.create({
     color: M3.onSurfaceVariant,
     fontStyle: 'italic',
   },
+  playerRight: {
+    alignItems: 'flex-end',
+    flexShrink: 0,
+  },
+  playerRightMobile: {
+    marginLeft: spacing.xs,
+  },
   statusButtons: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  statusButtonsMobile: {
+    gap: spacing.xs,
   },
   statusBtn: {
     width: 44,
@@ -810,6 +854,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
+  },
+  statusBtnMobile: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   playerRowDisabled: {
     opacity: 0.5,
@@ -825,6 +874,9 @@ const styles = StyleSheet.create({
     color: M3.onSurfaceVariant,
     marginTop: 6,
     textAlign: 'right',
+  },
+  timestampTextMobile: {
+    marginTop: spacing.xs,
   },
   separator: {
     height: spacing.sm,

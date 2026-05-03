@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 export const TEAM_NAME = 'Quick Amsterdam';
 
 // Default password loaded from environment variable - never hardcode!
@@ -12,6 +14,7 @@ export interface TeamConfig {
   shortName: string;
   icsUrl: string;
   enableReplacementFlow: boolean;
+  active?: boolean;
 }
 
 export const TEAMS: TeamConfig[] = [
@@ -59,8 +62,63 @@ export const TEAMS: TeamConfig[] = [
   },
 ];
 
+let runtimeTeams: TeamConfig[] = [...TEAMS];
+
+function normalizeTeamRow(row: {
+  id: string;
+  name: string;
+  short_name: string;
+  ics_url: string | null;
+  enable_replacement_flow: boolean | null;
+  active: boolean | null;
+}): TeamConfig {
+  return {
+    id: row.id,
+    name: row.name,
+    shortName: row.short_name,
+    icsUrl: row.ics_url || '',
+    enableReplacementFlow: row.enable_replacement_flow === true,
+    active: row.active !== false,
+  };
+}
+
+export function getTeamConfigs(): TeamConfig[] {
+  return runtimeTeams;
+}
+
+export function setTeamConfigs(teams: TeamConfig[]): void {
+  runtimeTeams = teams.length > 0 ? [...teams] : [...TEAMS];
+}
+
+export async function loadTeamConfigs(options: { includeInactive?: boolean } = {}): Promise<TeamConfig[]> {
+  const query = supabase
+    .from('teams')
+    .select('id, name, short_name, ics_url, enable_replacement_flow, active')
+    .order('short_name');
+
+  if (!options.includeInactive) {
+    query.eq('active', true);
+  }
+
+  const { data, error } = await query;
+
+  // During rollout we keep static fallback teams when DB table/migration is not available yet.
+  if (error && /teams|relation|does not exist|schema cache/i.test(error.message || '')) {
+    return getTeamConfigs();
+  }
+
+  if (error) {
+    throw error;
+  }
+
+  const mapped = (data || []).map(normalizeTeamRow);
+  setTeamConfigs(mapped);
+  return getTeamConfigs();
+}
+
 export function getTeamConfig(teamId: string): TeamConfig | undefined {
-  return TEAMS.find((team) => team.id === teamId);
+  return getTeamConfigs().find((team) => team.id === teamId)
+    || TEAMS.find((team) => team.id === teamId);
 }
 
 export function teamHasReplacementFlow(teamId: string): boolean {

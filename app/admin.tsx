@@ -19,19 +19,29 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Player } from '../src/types';
 import { getAllPlayers, getCurrentPlayer } from '../src/auth';
 import {
+  bulkImportTeamPlayers,
+  BulkImportResponse,
+  createTeam,
   createOrLinkPlayer,
+  getTeams,
   removePlayerFromTeam,
   resetPlayerPasswordToDefault,
   setPlayerActive,
   setPlayerTeams,
   suggestUsername,
+  updateTeam,
   updatePlayerProfile,
 } from '../src/teamAdmin';
-import { DEFAULT_PASSWORD, TEAMS, getTeamConfig } from '../src/config';
+import { DEFAULT_PASSWORD, TeamConfig, getTeamConfig } from '../src/config';
 import { M3, radii, spacing, typography } from '../src/theme';
 
 const LOGIN_URL = 'https://quickams.netlify.app/login';
 const USERNAME_REGEX = /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/;
+const TEAM_ID_REGEX = /^[a-z0-9-]{2,20}$/;
+
+function normalizeFilterValue(value: string): string {
+  return value.toLowerCase().replace(/[\s_-]+/g, '');
+}
 
 function TooltipIconButton({
   tooltip,
@@ -100,6 +110,7 @@ export default function AdminScreen() {
   const router = useRouter();
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [teams, setTeams] = useState<TeamConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [resettingId, setResettingId] = useState<number | null>(null);
@@ -120,9 +131,33 @@ export default function AdminScreen() {
   const [savingPlayerProfile, setSavingPlayerProfile] = useState(false);
   const [addPlayerVisible, setAddPlayerVisible] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState('');
-  const [addPlayerTeamId, setAddPlayerTeamId] = useState<string>(TEAMS[0]?.id || '');
+  const [addPlayerTeamId, setAddPlayerTeamId] = useState<string>('');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submittingPlayer, setSubmittingPlayer] = useState(false);
+  const [addTeamVisible, setAddTeamVisible] = useState(false);
+  const [newTeamId, setNewTeamId] = useState('');
+  const [newTeamName, setNewTeamName] = useState('');
+  const [newTeamShortName, setNewTeamShortName] = useState('');
+  const [newTeamIcsUrl, setNewTeamIcsUrl] = useState('');
+  const [newTeamReplacementFlow, setNewTeamReplacementFlow] = useState(false);
+  const [newTeamActive, setNewTeamActive] = useState(true);
+  const [creatingTeam, setCreatingTeam] = useState(false);
+  const [createTeamError, setCreateTeamError] = useState<string | null>(null);
+  const [editTeamVisible, setEditTeamVisible] = useState(false);
+  const [editTeamId, setEditTeamId] = useState('');
+  const [editTeamName, setEditTeamName] = useState('');
+  const [editTeamShortName, setEditTeamShortName] = useState('');
+  const [editTeamIcsUrl, setEditTeamIcsUrl] = useState('');
+  const [editTeamReplacementFlow, setEditTeamReplacementFlow] = useState(false);
+  const [editTeamActive, setEditTeamActive] = useState(true);
+  const [savingEditTeam, setSavingEditTeam] = useState(false);
+  const [editTeamError, setEditTeamError] = useState<string | null>(null);
+  const [bulkImportVisible, setBulkImportVisible] = useState(false);
+  const [bulkImportTeamId, setBulkImportTeamId] = useState('');
+  const [bulkImportNamesText, setBulkImportNamesText] = useState('');
+  const [bulkImportError, setBulkImportError] = useState<string | null>(null);
+  const [bulkImportSubmitting, setBulkImportSubmitting] = useState(false);
+  const [bulkImportResult, setBulkImportResult] = useState<BulkImportResponse | null>(null);
   const infoMsgTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isAdmin = currentPlayer?.role === 'admin';
@@ -132,22 +167,51 @@ export default function AdminScreen() {
 
   const manageableTeamIds = useMemo(() => {
     if (!currentPlayer) return [];
-    if (currentPlayer.role === 'admin') return TEAMS.map((t) => t.id);
+    if (currentPlayer.role === 'admin') return teams.map((t) => t.id);
 
     const fromTeamAdmin = currentPlayer.role === 'teamAdmin' ? (currentPlayer.team_ids || []) : [];
     const fromCaptain = currentPlayer.captain_team_ids || [];
     return [...new Set([...fromTeamAdmin, ...fromCaptain])];
-  }, [currentPlayer]);
+  }, [currentPlayer, teams]);
 
   const manageableTeamIdSet = useMemo(() => new Set(manageableTeamIds), [manageableTeamIds]);
 
   const allowedAddTeams = useMemo(
-    () => TEAMS.filter((team) => manageableTeamIdSet.has(team.id)),
-    [manageableTeamIdSet]
+    () => teams.filter((team) => manageableTeamIdSet.has(team.id) && team.active !== false),
+    [manageableTeamIdSet, teams]
   );
 
+  const adminCreatableTeams = useMemo(
+    () => teams.filter((team) => team.active !== false),
+    [teams]
+  );
+
+  const adminEditableTeams = useMemo(
+    () => teams,
+    [teams]
+  );
+
+  const bulkImportTeams = useMemo(
+    () => (isAdmin ? adminCreatableTeams : allowedAddTeams),
+    [adminCreatableTeams, allowedAddTeams, isAdmin]
+  );
+
+  const loadTeams = useCallback(async () => {
+    try {
+      const fetched = await getTeams(true);
+      setTeams(fetched);
+    } catch {
+      setErrorMsg('Kon teams niet laden.');
+    }
+  }, []);
+
   useEffect(() => {
-    getCurrentPlayer().then((p) => {
+    let cancelled = false;
+
+    const loadAccessContext = async () => {
+      const p = await getCurrentPlayer();
+      if (cancelled) return;
+
       const canAccess = !!p && (
         p.role === 'admin'
         || p.role === 'teamAdmin'
@@ -158,9 +222,17 @@ export default function AdminScreen() {
         router.replace('/games');
         return;
       }
+
       setCurrentPlayer(p);
-    });
-  }, []);
+      await loadTeams();
+    };
+
+    loadAccessContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadTeams, router]);
 
   useEffect(() => {
     return () => {
@@ -199,6 +271,28 @@ export default function AdminScreen() {
   useEffect(() => {
     loadPlayers();
   }, [loadPlayers]);
+
+  useEffect(() => {
+    if (allowedAddTeams.length === 0) {
+      setAddPlayerTeamId('');
+      return;
+    }
+
+    if (!allowedAddTeams.some((team) => team.id === addPlayerTeamId)) {
+      setAddPlayerTeamId(allowedAddTeams[0].id);
+    }
+  }, [addPlayerTeamId, allowedAddTeams]);
+
+  useEffect(() => {
+    if (bulkImportTeams.length === 0) {
+      setBulkImportTeamId('');
+      return;
+    }
+
+    if (!bulkImportTeams.some((team) => team.id === bulkImportTeamId)) {
+      setBulkImportTeamId(bulkImportTeams[0].id);
+    }
+  }, [bulkImportTeamId, bulkImportTeams]);
 
   const handleToggleActive = useCallback(async (player: Player) => {
     const next = !player.active;
@@ -273,11 +367,11 @@ export default function AdminScreen() {
 
   const modalTeams = useMemo(() => {
     if (!teamModalPlayer) return [];
-    if (isAdmin) return TEAMS;
+    if (isAdmin) return teams;
 
     const playerTeamIdSet = new Set(teamModalPlayer.team_ids || []);
-    return TEAMS.filter((team) => captainManagedTeamIdSet.has(team.id) && playerTeamIdSet.has(team.id));
-  }, [captainManagedTeamIdSet, isAdmin, teamModalPlayer]);
+    return teams.filter((team) => captainManagedTeamIdSet.has(team.id) && playerTeamIdSet.has(team.id));
+  }, [captainManagedTeamIdSet, isAdmin, teamModalPlayer, teams]);
 
   const toggleDraftTeam = useCallback((teamId: string) => {
     if (!isAdmin && !captainManagedTeamIdSet.has(teamId)) return;
@@ -475,6 +569,66 @@ export default function AdminScreen() {
     setSubmittingPlayer(false);
   }, []);
 
+  const closeAddTeamModal = useCallback(() => {
+    setAddTeamVisible(false);
+    setNewTeamId('');
+    setNewTeamName('');
+    setNewTeamShortName('');
+    setNewTeamIcsUrl('');
+    setNewTeamReplacementFlow(false);
+    setNewTeamActive(true);
+    setCreateTeamError(null);
+    setCreatingTeam(false);
+  }, []);
+
+  const applyEditTeamForm = useCallback((team: TeamConfig | null) => {
+    if (!team) {
+      setEditTeamId('');
+      setEditTeamName('');
+      setEditTeamShortName('');
+      setEditTeamIcsUrl('');
+      setEditTeamReplacementFlow(false);
+      setEditTeamActive(true);
+      return;
+    }
+
+    setEditTeamId(team.id);
+    setEditTeamName(team.name || '');
+    setEditTeamShortName(team.shortName || '');
+    setEditTeamIcsUrl(team.icsUrl || '');
+    setEditTeamReplacementFlow(team.enableReplacementFlow === true);
+    setEditTeamActive(team.active !== false);
+  }, []);
+
+  const openEditTeamModal = useCallback(() => {
+    if (!isAdmin) {
+      setErrorMsg('Alleen admins mogen teams bewerken.');
+      return;
+    }
+
+    const initial = adminEditableTeams.find((team) => team.id === editTeamId)
+      || adminEditableTeams[0]
+      || null;
+
+    applyEditTeamForm(initial);
+    setEditTeamError(null);
+    setEditTeamVisible(true);
+  }, [adminEditableTeams, applyEditTeamForm, editTeamId, isAdmin]);
+
+  const closeEditTeamModal = useCallback(() => {
+    setEditTeamVisible(false);
+    setSavingEditTeam(false);
+    setEditTeamError(null);
+  }, []);
+
+  const closeBulkImportModal = useCallback(() => {
+    setBulkImportVisible(false);
+    setBulkImportNamesText('');
+    setBulkImportError(null);
+    setBulkImportSubmitting(false);
+    setBulkImportResult(null);
+  }, []);
+
   const isShareCancelError = useCallback((err: any) => {
     const name = String(err?.name || '').toLowerCase();
     const message = String(err?.message || '').toLowerCase();
@@ -574,6 +728,194 @@ export default function AdminScreen() {
     }
   }, [copyTextForWeb, isShareCancelError, showInfoMessage]);
 
+  const handleCreateTeam = useCallback(async () => {
+    if (!isAdmin) {
+      setCreateTeamError('Alleen admins mogen teams aanmaken.');
+      return;
+    }
+
+    const normalizedTeamId = newTeamId.trim().toLowerCase();
+    const normalizedName = newTeamName.trim().replace(/\s+/g, ' ');
+    const normalizedShortName = newTeamShortName.trim().replace(/\s+/g, ' ');
+    const normalizedIcsUrl = newTeamIcsUrl.trim();
+
+    if (!normalizedTeamId || !normalizedName || !normalizedShortName) {
+      setCreateTeamError('Vul team-id, naam en short name in.');
+      return;
+    }
+
+    if (!TEAM_ID_REGEX.test(normalizedTeamId)) {
+      setCreateTeamError('Team-id moet 2-20 tekens zijn: a-z, 0-9 en streepje.');
+      return;
+    }
+
+    if (normalizedIcsUrl && !/^https?:\/\//i.test(normalizedIcsUrl)) {
+      setCreateTeamError('ICS URL moet met http:// of https:// beginnen.');
+      return;
+    }
+
+    setCreatingTeam(true);
+    setCreateTeamError(null);
+
+    try {
+      const created = await createTeam({
+        teamId: normalizedTeamId,
+        name: normalizedName,
+        shortName: normalizedShortName,
+        icsUrl: normalizedIcsUrl,
+        enableReplacementFlow: newTeamReplacementFlow,
+        active: newTeamActive,
+      });
+
+      await loadTeams();
+      setAddPlayerTeamId(created.team.id);
+      closeAddTeamModal();
+      showInfoMessage(`Team ${created.team.shortName} is aangemaakt.`);
+    } catch (err: any) {
+      setCreateTeamError(err.message || 'Team aanmaken mislukt.');
+    } finally {
+      setCreatingTeam(false);
+    }
+  }, [
+    closeAddTeamModal,
+    isAdmin,
+    loadTeams,
+    newTeamActive,
+    newTeamIcsUrl,
+    newTeamId,
+    newTeamName,
+    newTeamReplacementFlow,
+    newTeamShortName,
+    showInfoMessage,
+  ]);
+
+  const handleSaveEditedTeam = useCallback(async () => {
+    if (!isAdmin) {
+      setEditTeamError('Alleen admins mogen teams bewerken.');
+      return;
+    }
+
+    const teamId = editTeamId.trim().toLowerCase();
+    const normalizedName = editTeamName.trim().replace(/\s+/g, ' ');
+    const normalizedShortName = editTeamShortName.trim().replace(/\s+/g, ' ');
+    const normalizedIcsUrl = editTeamIcsUrl.trim();
+
+    if (!teamId || !normalizedName || !normalizedShortName) {
+      setEditTeamError('Naam en short name zijn verplicht.');
+      return;
+    }
+
+    if (normalizedIcsUrl && !/^https?:\/\//i.test(normalizedIcsUrl)) {
+      setEditTeamError('ICS URL moet met http:// of https:// beginnen.');
+      return;
+    }
+
+    setSavingEditTeam(true);
+    setEditTeamError(null);
+
+    try {
+      const updated = await updateTeam({
+        teamId,
+        name: normalizedName,
+        shortName: normalizedShortName,
+        icsUrl: normalizedIcsUrl,
+        enableReplacementFlow: editTeamReplacementFlow,
+        active: editTeamActive,
+      });
+
+      await loadTeams();
+      closeEditTeamModal();
+      showInfoMessage(`Team ${updated.team.shortName} is bijgewerkt.`);
+    } catch (err: any) {
+      setEditTeamError(err.message || 'Team bijwerken mislukt.');
+    } finally {
+      setSavingEditTeam(false);
+    }
+  }, [
+    closeEditTeamModal,
+    editTeamActive,
+    editTeamIcsUrl,
+    editTeamId,
+    editTeamName,
+    editTeamReplacementFlow,
+    editTeamShortName,
+    isAdmin,
+    loadTeams,
+    showInfoMessage,
+  ]);
+
+  const copyBulkImportOverview = useCallback(async () => {
+    if (!bulkImportResult) return;
+
+    const text = bulkImportResult.results
+      .filter((row) => row.status !== 'error' && row.username)
+      .map((row) => `${row.name}: ${row.username}`)
+      .join('\n');
+
+    if (!text) {
+      setBulkImportError('Geen gebruikersnamen beschikbaar om te kopieren.');
+      return;
+    }
+
+    try {
+      if (Platform.OS === 'web') {
+        const copied = await copyTextForWeb(text);
+        if (!copied) {
+          window.prompt('Kopieer dit overzicht:', text);
+          return;
+        }
+        showInfoMessage('Overzicht met gebruikersnamen is gekopieerd.');
+        return;
+      }
+
+      const result = await Share.share({
+        title: 'Nieuwe gebruikersnamen',
+        message: text,
+      });
+      if (result?.action === Share.dismissedAction) return;
+      showInfoMessage('Overzicht met gebruikersnamen gedeeld.');
+    } catch (err: any) {
+      if (isShareCancelError(err)) return;
+      setBulkImportError('Kon overzicht niet delen of kopieren.');
+    }
+  }, [bulkImportResult, copyTextForWeb, isShareCancelError, showInfoMessage]);
+
+  const handleRunBulkImport = useCallback(async () => {
+    if (!bulkImportTeamId) {
+      setBulkImportError('Kies eerst een team.');
+      return;
+    }
+
+    if (!bulkImportNamesText.trim()) {
+      setBulkImportError('Plak eerst namen (1 naam per regel).');
+      return;
+    }
+
+    setBulkImportSubmitting(true);
+    setBulkImportError(null);
+
+    try {
+      const result = await bulkImportTeamPlayers({
+        teamId: bulkImportTeamId,
+        namesText: bulkImportNamesText,
+      });
+      setBulkImportResult(result);
+
+      if ((result.summary.created + result.summary.linked) > 0) {
+        await loadPlayers();
+      }
+
+      if (result.summary.errors === 0) {
+        showInfoMessage(`Bulk import voltooid: ${result.summary.total} regels verwerkt.`);
+      }
+    } catch (err: any) {
+      setBulkImportError(err.message || 'Bulk import mislukt.');
+      setBulkImportResult(null);
+    } finally {
+      setBulkImportSubmitting(false);
+    }
+  }, [bulkImportNamesText, bulkImportTeamId, loadPlayers, showInfoMessage]);
+
   const handleAddPlayer = useCallback(async () => {
     const name = newPlayerName.trim();
     const username = suggestedUsername;
@@ -643,15 +985,37 @@ export default function AdminScreen() {
     return players.filter((p) => (p.team_ids || []).some((teamId) => manageableTeamIdSet.has(teamId)));
   }, [isAdmin, manageableTeamIdSet, players]);
 
+  const teamLookup = useMemo(() => {
+    const map = new Map<string, TeamConfig>();
+    teams.forEach((team) => map.set(team.id, team));
+    return map;
+  }, [teams]);
+
   const filteredPlayers = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const qNormalized = normalizeFilterValue(q);
     if (!q) return visiblePlayers;
+
+    const includesFilter = (value: string): boolean => {
+      const raw = (value || '').toLowerCase();
+      if (raw.includes(q)) return true;
+      return normalizeFilterValue(raw).includes(qNormalized);
+    };
+
     return visiblePlayers.filter((p) => {
       const name = (p.name || '').toLowerCase();
       const username = (p.username || '').toLowerCase();
-      return name.includes(q) || username.includes(q);
+      const teamSearchText = (p.team_ids || [])
+        .map((teamId) => {
+          const team = teamLookup.get(teamId) || getTeamConfig(teamId);
+          return [teamId, team?.shortName || '', team?.name || ''].join(' ');
+        })
+        .join(' ')
+        .toLowerCase();
+
+      return includesFilter(name) || includesFilter(username) || includesFilter(teamSearchText);
     });
-  }, [search, visiblePlayers]);
+  }, [search, teamLookup, visiblePlayers]);
 
   const activeCount = filteredPlayers.filter((p) => p.active).length;
   const inactiveCount = filteredPlayers.length - activeCount;
@@ -692,23 +1056,62 @@ export default function AdminScreen() {
         <View style={styles.headerBar}>
           <Text style={styles.headerTitle}>Alle spelers</Text>
           <Text style={styles.headerMeta}>Actief: {activeCount} · Inactief: {inactiveCount}</Text>
-          <TouchableOpacity
-            style={styles.addPlayerBtn}
-            onPress={() => {
-              setAddPlayerTeamId(allowedAddTeams[0]?.id || '');
-              setSubmitError(null);
-              setAddPlayerVisible(true);
-            }}
-          >
-            <MaterialCommunityIcons name="account-plus" size={18} color={M3.onPrimary} />
-            <Text style={styles.addPlayerBtnText}>Speler toevoegen</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActionRow}>
+            <TouchableOpacity
+              style={[styles.addPlayerBtn, allowedAddTeams.length === 0 && styles.resetBtnDisabled]}
+              onPress={() => {
+                setAddPlayerTeamId(allowedAddTeams[0]?.id || '');
+                setSubmitError(null);
+                setAddPlayerVisible(true);
+              }}
+              disabled={allowedAddTeams.length === 0}
+            >
+              <MaterialCommunityIcons name="account-plus" size={18} color={M3.onPrimary} />
+              <Text style={styles.addPlayerBtnText}>Speler toevoegen</Text>
+            </TouchableOpacity>
+
+            {isAdmin && (
+              <TouchableOpacity
+                style={styles.secondaryHeaderBtn}
+                onPress={() => {
+                  setCreateTeamError(null);
+                  setAddTeamVisible(true);
+                }}
+              >
+                <MaterialCommunityIcons name="account-group" size={18} color={M3.onSurface} />
+                <Text style={styles.secondaryHeaderBtnText}>Team toevoegen</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={[styles.secondaryHeaderBtn, (!isAdmin || adminEditableTeams.length === 0) && styles.resetBtnDisabled]}
+              onPress={openEditTeamModal}
+              disabled={!isAdmin || adminEditableTeams.length === 0}
+            >
+              <MaterialCommunityIcons name="pencil" size={18} color={M3.onSurface} />
+              <Text style={styles.secondaryHeaderBtnText}>Team bewerken</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.secondaryHeaderBtn, bulkImportTeams.length === 0 && styles.resetBtnDisabled]}
+              onPress={() => {
+                setBulkImportError(null);
+                setBulkImportResult(null);
+                setBulkImportTeamId(bulkImportTeams[0]?.id || '');
+                setBulkImportVisible(true);
+              }}
+              disabled={bulkImportTeams.length === 0}
+            >
+              <MaterialCommunityIcons name="clipboard-text" size={18} color={M3.onSurface} />
+              <Text style={styles.secondaryHeaderBtnText}>Bulk plakken</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.searchRow}>
             <MaterialCommunityIcons name="magnify" size={18} color={M3.onSurfaceVariant} />
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder="Zoek op naam of gebruikersnaam"
+              placeholder="Zoek op naam, gebruikersnaam of team (bijv. VS-1)"
               placeholderTextColor={M3.outline}
               style={styles.searchInput}
               autoCapitalize="none"
@@ -1112,6 +1515,288 @@ export default function AdminScreen() {
             </View>
           </View>
         </Modal>
+
+        <Modal
+          transparent
+          animationType="fade"
+          visible={addTeamVisible}
+          onRequestClose={closeAddTeamModal}
+        >
+          <View style={styles.modalBackdrop}>
+            <Pressable style={styles.modalBackdropTapZone} onPress={closeAddTeamModal} />
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Team toevoegen</Text>
+              <Text style={styles.modalSubtitle}>Nieuwe teams en instellingen worden in de database opgeslagen.</Text>
+
+              <Text style={styles.formLabel}>Team-id</Text>
+              <TextInput
+                style={[styles.formInput, styles.formInputMonospace]}
+                value={newTeamId}
+                onChangeText={(value) => setNewTeamId(value.replace(/\s+/g, '').toLowerCase())}
+                placeholder="bijv. vs3"
+                placeholderTextColor={M3.outline}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              <Text style={styles.formLabel}>Naam</Text>
+              <TextInput
+                style={styles.formInput}
+                value={newTeamName}
+                onChangeText={setNewTeamName}
+                placeholder="bijv. Quick Amsterdam VS-3"
+                placeholderTextColor={M3.outline}
+                autoCapitalize="words"
+              />
+
+              <Text style={styles.formLabel}>Short name</Text>
+              <TextInput
+                style={styles.formInput}
+                value={newTeamShortName}
+                onChangeText={setNewTeamShortName}
+                placeholder="bijv. VS-3"
+                placeholderTextColor={M3.outline}
+                autoCapitalize="characters"
+              />
+
+              <Text style={styles.formLabel}>ICS URL</Text>
+              <TextInput
+                style={[styles.formInput, styles.formInputMonospace]}
+                value={newTeamIcsUrl}
+                onChangeText={setNewTeamIcsUrl}
+                placeholder="https://.../team/ics"
+                placeholderTextColor={M3.outline}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              <View style={styles.inlineSwitchRow}>
+                <Text style={styles.inlineSwitchLabel}>Vervangersflow aan</Text>
+                <Switch
+                  value={newTeamReplacementFlow}
+                  onValueChange={setNewTeamReplacementFlow}
+                  thumbColor={newTeamReplacementFlow ? M3.primary : M3.outline}
+                  trackColor={{ false: M3.surfaceContainerHighest, true: M3.primaryContainer }}
+                />
+              </View>
+
+              <View style={styles.inlineSwitchRow}>
+                <Text style={styles.inlineSwitchLabel}>Team actief</Text>
+                <Switch
+                  value={newTeamActive}
+                  onValueChange={setNewTeamActive}
+                  thumbColor={newTeamActive ? M3.primary : M3.outline}
+                  trackColor={{ false: M3.surfaceContainerHighest, true: M3.primaryContainer }}
+                />
+              </View>
+
+              {createTeamError && <Text style={styles.formErrorText}>{createTeamError}</Text>}
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.modalCancelBtn} onPress={closeAddTeamModal}>
+                  <Text style={styles.modalCancelText}>Annuleren</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalSaveBtn, creatingTeam && styles.resetBtnDisabled]}
+                  onPress={handleCreateTeam}
+                  disabled={creatingTeam}
+                >
+                  {creatingTeam
+                    ? <ActivityIndicator size="small" color={M3.onPrimary} />
+                    : <Text style={styles.modalSaveText}>Aanmaken</Text>
+                  }
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          transparent
+          animationType="fade"
+          visible={editTeamVisible}
+          onRequestClose={closeEditTeamModal}
+        >
+          <View style={styles.modalBackdrop}>
+            <Pressable style={styles.modalBackdropTapZone} onPress={closeEditTeamModal} />
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Team bewerken</Text>
+              <Text style={styles.modalSubtitle}>Pas bestaande team-instellingen aan in de database.</Text>
+
+              <Text style={styles.formLabel}>Team</Text>
+              <View style={styles.teamPickerRow}>
+                {adminEditableTeams.map((team) => (
+                  <TouchableOpacity
+                    key={team.id}
+                    style={[styles.teamChoiceChip, editTeamId === team.id && styles.teamChoiceChipActive]}
+                    onPress={() => {
+                      applyEditTeamForm(team);
+                      setEditTeamError(null);
+                    }}
+                  >
+                    <Text style={[styles.teamChoiceText, editTeamId === team.id && styles.teamChoiceTextActive]}>
+                      {team.shortName}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.formLabel}>Naam</Text>
+              <TextInput
+                style={styles.formInput}
+                value={editTeamName}
+                onChangeText={setEditTeamName}
+                placeholder="bijv. Quick Amsterdam VS-3"
+                placeholderTextColor={M3.outline}
+                autoCapitalize="words"
+              />
+
+              <Text style={styles.formLabel}>Short name</Text>
+              <TextInput
+                style={styles.formInput}
+                value={editTeamShortName}
+                onChangeText={setEditTeamShortName}
+                placeholder="bijv. VS-3"
+                placeholderTextColor={M3.outline}
+                autoCapitalize="characters"
+              />
+
+              <Text style={styles.formLabel}>ICS URL</Text>
+              <TextInput
+                style={[styles.formInput, styles.formInputMonospace]}
+                value={editTeamIcsUrl}
+                onChangeText={setEditTeamIcsUrl}
+                placeholder="https://.../team/ics"
+                placeholderTextColor={M3.outline}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              <View style={styles.inlineSwitchRow}>
+                <Text style={styles.inlineSwitchLabel}>Vervangersflow aan</Text>
+                <Switch
+                  value={editTeamReplacementFlow}
+                  onValueChange={setEditTeamReplacementFlow}
+                  thumbColor={editTeamReplacementFlow ? M3.primary : M3.outline}
+                  trackColor={{ false: M3.surfaceContainerHighest, true: M3.primaryContainer }}
+                />
+              </View>
+
+              <View style={styles.inlineSwitchRow}>
+                <Text style={styles.inlineSwitchLabel}>Team actief</Text>
+                <Switch
+                  value={editTeamActive}
+                  onValueChange={setEditTeamActive}
+                  thumbColor={editTeamActive ? M3.primary : M3.outline}
+                  trackColor={{ false: M3.surfaceContainerHighest, true: M3.primaryContainer }}
+                />
+              </View>
+
+              {editTeamError && <Text style={styles.formErrorText}>{editTeamError}</Text>}
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.modalCancelBtn} onPress={closeEditTeamModal}>
+                  <Text style={styles.modalCancelText}>Annuleren</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalSaveBtn, savingEditTeam && styles.resetBtnDisabled]}
+                  onPress={handleSaveEditedTeam}
+                  disabled={savingEditTeam}
+                >
+                  {savingEditTeam
+                    ? <ActivityIndicator size="small" color={M3.onPrimary} />
+                    : <Text style={styles.modalSaveText}>Opslaan</Text>
+                  }
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          transparent
+          animationType="fade"
+          visible={bulkImportVisible}
+          onRequestClose={closeBulkImportModal}
+        >
+          <View style={styles.modalBackdrop}>
+            <Pressable style={styles.modalBackdropTapZone} onPress={closeBulkImportModal} />
+            <View style={[styles.modalCard, styles.modalCardLarge]}>
+              <Text style={styles.modalTitle}>Bulk teamleden toevoegen</Text>
+              <Text style={styles.modalSubtitle}>Plak 1 naam per regel. Bestaande spelers worden gekoppeld, nieuwe spelers worden aangemaakt.</Text>
+
+              <Text style={styles.formLabel}>Team</Text>
+              <View style={styles.teamPickerRow}>
+                {bulkImportTeams.map((team) => (
+                  <TouchableOpacity
+                    key={team.id}
+                    style={[styles.teamChoiceChip, bulkImportTeamId === team.id && styles.teamChoiceChipActive]}
+                    onPress={() => setBulkImportTeamId(team.id)}
+                  >
+                    <Text style={[styles.teamChoiceText, bulkImportTeamId === team.id && styles.teamChoiceTextActive]}>
+                      {team.shortName}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.formLabel}>Namen (1 per regel)</Text>
+              <TextInput
+                style={[styles.formInput, styles.bulkTextArea]}
+                value={bulkImportNamesText}
+                onChangeText={setBulkImportNamesText}
+                placeholder={'Bijv.\nJan Jansen\nPiet Pieters'}
+                placeholderTextColor={M3.outline}
+                multiline
+                textAlignVertical="top"
+                autoCapitalize="words"
+              />
+
+              {bulkImportError && <Text style={styles.formErrorText}>{bulkImportError}</Text>}
+
+              {bulkImportResult && (
+                <View style={styles.bulkResultBox}>
+                  <Text style={styles.bulkResultSummary}>
+                    Verwerkt: {bulkImportResult.summary.total} · Nieuw: {bulkImportResult.summary.created} · Gekoppeld: {bulkImportResult.summary.linked} · Bestond al: {bulkImportResult.summary.alreadyLinked} · Fouten: {bulkImportResult.summary.errors}
+                  </Text>
+                  <View style={styles.bulkResultRows}>
+                    {bulkImportResult.results.slice(0, 25).map((row) => (
+                      <Text key={`${row.lineNumber}-${row.name}`} style={styles.bulkResultRowText}>
+                        {row.lineNumber}. {row.name} - {row.username || '-'} ({row.status}){row.error ? `: ${row.error}` : ''}
+                      </Text>
+                    ))}
+                    {bulkImportResult.results.length > 25 && (
+                      <Text style={styles.bulkResultMoreText}>...en {bulkImportResult.results.length - 25} extra regels.</Text>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.modalCancelBtn} onPress={closeBulkImportModal}>
+                  <Text style={styles.modalCancelText}>Sluiten</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.modalSecondaryBtn}
+                  onPress={() => { void copyBulkImportOverview(); }}
+                  disabled={!bulkImportResult}
+                >
+                  <Text style={styles.modalSecondaryBtnText}>Kopieer overzicht</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalSaveBtn, bulkImportSubmitting && styles.resetBtnDisabled]}
+                  onPress={handleRunBulkImport}
+                  disabled={bulkImportSubmitting || bulkImportTeams.length === 0}
+                >
+                  {bulkImportSubmitting
+                    ? <ActivityIndicator size="small" color={M3.onPrimary} />
+                    : <Text style={styles.modalSaveText}>Importeren</Text>
+                  }
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </>
   );
@@ -1139,9 +1824,14 @@ const styles = StyleSheet.create({
     color: M3.onSurfaceVariant,
     marginTop: 2,
   },
-  addPlayerBtn: {
+  headerActionRow: {
     marginTop: spacing.sm,
-    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    alignItems: 'center',
+  },
+  addPlayerBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
@@ -1153,6 +1843,22 @@ const styles = StyleSheet.create({
   addPlayerBtnText: {
     ...typography.labelLarge,
     color: M3.onPrimary,
+    fontWeight: '600',
+  },
+  secondaryHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: M3.surfaceContainerHigh,
+    borderWidth: 1,
+    borderColor: M3.outlineVariant,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.full,
+  },
+  secondaryHeaderBtnText: {
+    ...typography.labelLarge,
+    color: M3.onSurface,
     fontWeight: '600',
   },
   searchRow: {
@@ -1220,6 +1926,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
     backgroundColor: M3.surface,
   },
   playerRowInactive: {
@@ -1364,6 +2071,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.xl,
     padding: spacing.lg,
   },
+  modalCardLarge: {
+    maxWidth: 620,
+  },
   modalTitle: {
     ...typography.titleMedium,
     color: M3.onSurface,
@@ -1500,6 +2210,21 @@ const styles = StyleSheet.create({
     color: M3.onSurfaceVariant,
     marginTop: spacing.xs,
   },
+  inlineSwitchRow: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: M3.surfaceContainerHigh,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  inlineSwitchLabel: {
+    ...typography.bodyMedium,
+    color: M3.onSurface,
+    fontWeight: '600',
+  },
   generatedUsernameBox: {
     backgroundColor: M3.secondaryContainer,
     borderRadius: radii.md,
@@ -1540,6 +2265,54 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: M3.absent,
     marginTop: spacing.sm,
+  },
+  bulkTextArea: {
+    minHeight: 140,
+    maxHeight: 220,
+  },
+  bulkResultBox: {
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: M3.outlineVariant,
+    borderRadius: radii.md,
+    backgroundColor: M3.surfaceContainerHigh,
+    padding: spacing.sm,
+  },
+  bulkResultSummary: {
+    ...typography.bodySmall,
+    color: M3.onSurface,
+    fontWeight: '700',
+    marginBottom: spacing.xs,
+  },
+  bulkResultRows: {
+    gap: 2,
+  },
+  bulkResultRowText: {
+    ...typography.bodySmall,
+    color: M3.onSurfaceVariant,
+    fontFamily: 'monospace',
+  },
+  bulkResultMoreText: {
+    ...typography.bodySmall,
+    color: M3.onSurfaceVariant,
+    marginTop: spacing.xs,
+    fontStyle: 'italic',
+  },
+  modalSecondaryBtn: {
+    backgroundColor: M3.surfaceContainerHigh,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: M3.outlineVariant,
+    minWidth: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  modalSecondaryBtnText: {
+    ...typography.labelLarge,
+    color: M3.onSurface,
+    fontWeight: '700',
   },
   emptyText: {
     ...typography.bodyMedium,

@@ -16,9 +16,10 @@ import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { fetchGames } from '../src/icsParser';
 import { getAttendance, getAttendanceSummary, setAttendance } from '../src/storage';
-import { TEAMS, TeamConfig, QUICK_LOGO_URL, TEAM_NAME, teamHasReplacementFlow } from '../src/config';
+import { TeamConfig, QUICK_LOGO_URL, TEAM_NAME, teamHasReplacementFlow } from '../src/config';
 import { AttendanceStatus, Game, Player } from '../src/types';
 import { getCurrentPlayer, getPlayersForTeam, signOut } from '../src/auth';
+import { getTeams } from '../src/teamAdmin';
 import { M3, radii, spacing, typography } from '../src/theme';
 import { DisclaimerFooter } from '../src/DisclaimerFooter';
 
@@ -28,7 +29,10 @@ const STATUS_OPTIONS: { value: Exclude<AttendanceStatus, null>; label: string; i
   { value: 'uncertain', label: 'Onzeker', icon: 'help-circle', bg: M3.warningContainer, active: M3.warning },
 ];
 
-type MatchView = 'upcoming' | 'past';
+function isGamePast(game: Game, referenceDate: Date): boolean {
+  const boundary = game.endDate ?? game.startDate;
+  return boundary.getTime() < referenceDate.getTime();
+}
 
 function formatDate(date: Date): string {
   const days = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
@@ -243,7 +247,6 @@ export default function GamesScreen() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [selectedTeam, setSelectedTeam] = useState<TeamConfig | null>(null);
-  const [activeView, setActiveView] = useState<MatchView>('upcoming');
   const [availableTeams, setAvailableTeams] = useState<TeamConfig[]>([]);
   const [ownStatuses, setOwnStatuses] = useState<Record<string, AttendanceStatus>>({});
   const [summaries, setSummaries] = useState<
@@ -256,26 +259,54 @@ export default function GamesScreen() {
   const [currentPlayerCountedInTeam, setCurrentPlayerCountedInTeam] = useState(true);
 
   useEffect(() => {
-    getCurrentPlayer().then((player) => {
-      setCurrentPlayer(player);
-      if (!player) {
-        setAvailableTeams([]);
-        setLoading(false);
-        return;
-      }
+    let cancelled = false;
 
-      // Admins see all teams, teamAdmins and players see only their teams
-      const teams =
-        player.role === 'admin'
-          ? TEAMS
-          : TEAMS.filter((t) => player.team_ids?.includes(t.id));
-      setAvailableTeams(teams);
-      if (teams.length > 0 && !selectedTeam) {
-        setSelectedTeam(teams[0]);
-      } else if (teams.length === 0) {
-        setLoading(false);
+    const loadUserAndTeams = async () => {
+      try {
+        const [player, allTeams] = await Promise.all([
+          getCurrentPlayer(),
+          getTeams(false),
+        ]);
+
+        if (cancelled) return;
+        setCurrentPlayer(player);
+
+        if (!player) {
+          setAvailableTeams([]);
+          setLoading(false);
+          return;
+        }
+
+        // Admins see all teams, teamAdmins and players see only their teams.
+        const teams = player.role === 'admin'
+          ? allTeams
+          : allTeams.filter((t) => player.team_ids?.includes(t.id));
+
+        setAvailableTeams(teams);
+        setSelectedTeam((prev) => {
+          if (!teams.length) return null;
+          if (prev && teams.some((team) => team.id === prev.id)) {
+            return teams.find((team) => team.id === prev.id) || teams[0];
+          }
+          return teams[0];
+        });
+
+        if (teams.length === 0) {
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setError('Kon teams niet laden.');
+          setLoading(false);
+        }
       }
-    });
+    };
+
+    loadUserAndTeams();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleLogout = async () => {
@@ -437,10 +468,8 @@ export default function GamesScreen() {
   }
 
   const now = new Date();
-  const upcoming = games.filter((g) => g.startDate >= now);
-  const past = games.filter((g) => g.startDate < now);
-  const pastGames = [...past].reverse();
-  const visibleGames = activeView === 'upcoming' ? upcoming : pastGames;
+  const upcoming = games.filter((g) => !isGamePast(g, now));
+  const visibleGames = upcoming;
   const nextGame = upcoming.length > 0 ? upcoming[0] : null;
 
   // Flip phone cover display mode
@@ -531,52 +560,18 @@ export default function GamesScreen() {
                 </View>
               )}
 
-              <View style={styles.viewToggleContainer}>
-                <View style={styles.segmentedButton}>
-                  {[
-                    { id: 'upcoming' as const, label: 'Aankomend' },
-                    { id: 'past' as const, label: 'Gespeeld' },
-                  ].map((view, i, allViews) => (
-                    <TouchableOpacity
-                      key={view.id}
-                      style={[
-                        styles.segment,
-                        activeView === view.id && styles.segmentActive,
-                        i === 0 && styles.segmentFirst,
-                        i === allViews.length - 1 && styles.segmentLast,
-                      ]}
-                      onPress={() => setActiveView(view.id)}
-                    >
-                      <Text
-                        style={[
-                          styles.segmentText,
-                          activeView === view.id && styles.segmentTextActive,
-                        ]}
-                      >
-                        {view.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                {activeView === 'past' && (
-                  <Text style={styles.viewHint}>Historie van gespeelde wedstrijden, meest recent bovenaan.</Text>
-                )}
-              </View>
-
             </View>
           }
           renderItem={({ item, index }) => (
             <>
               {index === 0 && (
-                <Text style={[styles.sectionHeader, activeView === 'past' && styles.sectionHeaderHistorical]}>
-                  {activeView === 'upcoming' ? 'Aankomend' : 'Wedstrijdhistorie'}
-                </Text>
+                <Text style={styles.sectionHeader}>Aankomend</Text>
               )}
               <GameCard
                 game={item}
                 summary={summaries[item.id] || null}
-                isHero={activeView === 'upcoming' && index === 0 && upcoming.length > 0}
-                dimPast={activeView === 'upcoming'}
+                isHero={index === 0 && upcoming.length > 0}
+                dimPast
                 ownStatus={ownStatuses[item.id] ?? null}
                 ownStatusDisabled={savingGameId === item.id}
                 onSetOwnStatus={currentPlayer && selectedTeam && (currentPlayer.role === 'admin' || currentPlayer.team_ids?.includes(selectedTeam.id))
@@ -594,9 +589,7 @@ export default function GamesScreen() {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <MaterialCommunityIcons name="baseball" size={48} color={M3.onSurfaceVariant} />
-              <Text style={styles.emptyText}>
-                {activeView === 'upcoming' ? 'Geen aankomende wedstrijden' : 'Geen gespeelde wedstrijden'}
-              </Text>
+              <Text style={styles.emptyText}>Geen aankomende wedstrijden</Text>
             </View>
           }
           ListFooterComponent={<DisclaimerFooter />}

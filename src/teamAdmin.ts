@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { getTeamConfig, TEAMS, TeamConfig } from './config';
+import { getTeamConfig, getTeamConfigs, loadTeamConfigs, TeamConfig } from './config';
 import { Player } from './types';
 import { supabase } from './supabase';
 
@@ -27,12 +27,16 @@ export function suggestUsername(name: string): string {
 
 export function getManagedTeams(player: Player | null): TeamConfig[] {
   if (!player) return [];
-  if (player.role === 'admin') return TEAMS;
+  if (player.role === 'admin') return getTeamConfigs();
 
   const teamIds = new Set(player.role === 'teamAdmin' ? player.team_ids || [] : []);
   return [...teamIds]
     .map((teamId) => getTeamConfig(teamId))
     .filter((team): team is TeamConfig => !!team);
+}
+
+export async function getTeams(includeInactive = false): Promise<TeamConfig[]> {
+  return loadTeamConfigs({ includeInactive });
 }
 
 function getFunctionUrl(path: string): string {
@@ -60,6 +64,49 @@ export interface CreateOrLinkPlayerResponse {
   };
   nameMismatch: boolean;
   mustChangePassword: boolean;
+}
+
+export interface CreateTeamInput {
+  teamId: string;
+  name: string;
+  shortName: string;
+  icsUrl: string;
+  enableReplacementFlow: boolean;
+  active: boolean;
+}
+
+export interface CreateTeamResponse {
+  team: TeamConfig;
+}
+
+export interface UpdateTeamInput {
+  teamId: string;
+  name: string;
+  shortName: string;
+  icsUrl: string;
+  enableReplacementFlow: boolean;
+  active: boolean;
+}
+
+export type BulkImportStatus = 'created' | 'linked' | 'already-linked' | 'error';
+
+export interface BulkImportResultRow {
+  lineNumber: number;
+  name: string;
+  username: string | null;
+  status: BulkImportStatus;
+  error: string | null;
+}
+
+export interface BulkImportResponse {
+  summary: {
+    total: number;
+    created: number;
+    linked: number;
+    alreadyLinked: number;
+    errors: number;
+  };
+  results: BulkImportResultRow[];
 }
 
 export async function createOrLinkPlayer(input: {
@@ -229,4 +276,85 @@ export async function updatePlayerProfile(
   }
 
   return payload.player as { id: number; name: string; username: string };
+}
+
+export async function createTeam(input: CreateTeamInput): Promise<CreateTeamResponse> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error('Je sessie is verlopen. Log opnieuw in.');
+  }
+
+  const response = await fetch(getFunctionUrl('/.netlify/functions/create-team'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify(input),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Team aanmaken mislukt.');
+  }
+
+  return payload as CreateTeamResponse;
+}
+
+export async function bulkImportTeamPlayers(input: {
+  teamId: string;
+  namesText: string;
+}): Promise<BulkImportResponse> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error('Je sessie is verlopen. Log opnieuw in.');
+  }
+
+  const response = await fetch(getFunctionUrl('/.netlify/functions/bulk-import-team-players'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify(input),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Bulk import mislukt.');
+  }
+
+  return payload as BulkImportResponse;
+}
+
+export async function updateTeam(input: UpdateTeamInput): Promise<CreateTeamResponse> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error('Je sessie is verlopen. Log opnieuw in.');
+  }
+
+  const response = await fetch(getFunctionUrl('/.netlify/functions/update-team'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify(input),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Team bijwerken mislukt.');
+  }
+
+  return payload as CreateTeamResponse;
 }
