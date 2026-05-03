@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -464,6 +464,11 @@ export default function GamesScreen() {
           </Text>
           <MaterialCommunityIcons name="logout" size={18} color="#FFFFFF" />
         </TouchableOpacity>
+        {(currentPlayer?.role === 'admin' || currentPlayer?.role === 'teamAdmin' || (currentPlayer?.captain_team_ids?.length ?? 0) > 0) && (
+          <TouchableOpacity onPress={() => router.push('/admin')} style={styles.adminNavBtn}>
+            <MaterialCommunityIcons name="shield-account" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
         <TouchableOpacity onPress={() => router.replace('/games')}>
           <Image
             source={{ uri: QUICK_LOGO_URL }}
@@ -546,6 +551,7 @@ export default function GamesScreen() {
                   <Text style={styles.viewHint}>Historie van gespeelde wedstrijden, meest recent bovenaan.</Text>
                 )}
               </View>
+
             </View>
           }
           renderItem={({ item, index }) => (
@@ -668,6 +674,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
+  adminNavBtn: {
+    position: 'absolute',
+    top: 10,
+    left: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   // Material 3 segmented button
   segmentedContainer: {
     paddingHorizontal: spacing.md,
@@ -752,7 +769,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   cardHistorical: {
-    backgroundColor: M3.surfaceContainerLow,
+    backgroundColor: M3.surfaceContainer,
     borderColor: M3.outline,
   },
   cardHero: {
@@ -871,6 +888,170 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: M3.onSurfaceVariant,
+  },
+  addPlayerRow: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    alignItems: 'center',
+  },
+  removePlayerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: M3.surfaceContainerHighest,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.full,
+  },
+  removePlayerBtnText: {
+    color: M3.onSurface,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  removePlayerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+  },
+  removePlayerName: {
+    flex: 1,
+    fontSize: 15,
+    color: M3.onSurface,
+    marginRight: spacing.sm,
+  },
+  removePlayerConfirmBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: M3.absentContainer,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removePlayerSeparator: {
+    height: 1,
+    backgroundColor: M3.outlineVariant,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalBackdropTapZone: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  formModalCard: {
+    backgroundColor: M3.surfaceContainer,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    width: '90%',
+    maxWidth: 420,
+  },
+  formModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: M3.onSurface,
+    marginBottom: spacing.xs,
+  },
+  formModalText: {
+    fontSize: 13,
+    color: M3.onSurfaceVariant,
+    marginBottom: spacing.md,
+  },
+  formLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: M3.onSurface,
+    marginBottom: spacing.xs,
+  },
+  formInput: {
+    borderWidth: 1,
+    borderColor: M3.outline,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: 15,
+    color: M3.onSurface,
+    backgroundColor: M3.surface,
+    marginBottom: spacing.md,
+  },
+  generatedUsernameBox: {
+    backgroundColor: M3.surfaceContainerHigh,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  generatedUsernameText: {
+    fontSize: 15,
+    color: M3.onSurfaceVariant,
+    fontFamily: 'monospace',
+  },
+  teamPickerRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  teamChoiceChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: M3.outline,
+  },
+  teamChoiceChipActive: {
+    backgroundColor: M3.secondaryContainer,
+    borderColor: M3.secondary,
+  },
+  teamChoiceText: {
+    fontSize: 13,
+    color: M3.onSurface,
+  },
+  teamChoiceTextActive: {
+    color: M3.onSecondaryContainer,
+    fontWeight: '600',
+  },
+  formErrorText: {
+    fontSize: 13,
+    color: M3.absent,
+    marginBottom: spacing.sm,
+  },
+  formActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  formSecondaryButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.full,
+  },
+  formSecondaryButtonText: {
+    fontSize: 14,
+    color: M3.onSurfaceVariant,
+    fontWeight: '500',
+  },
+  formPrimaryButton: {
+    backgroundColor: M3.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.full,
+    minWidth: 90,
+    alignItems: 'center',
+  },
+  formPrimaryButtonDisabled: {
+    opacity: 0.6,
+  },
+  formPrimaryButtonText: {
+    color: M3.onPrimary,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

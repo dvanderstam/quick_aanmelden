@@ -36,12 +36,30 @@ export default function RootLayout() {
       setDisclaimerAccepted(true);
       return;
     }
+
+    let cancelled = false;
     setMustChangePassword(null); // mark as loading so nav guard waits
     setDisclaimerAccepted(null);
-    getCurrentPlayer().then((player) => {
-      setMustChangePassword(player?.must_change_password ?? false);
-      setDisclaimerAccepted(player?.disclaimer_accepted ?? false);
+
+    getCurrentPlayer().then(async (player) => {
+      if (cancelled) return;
+
+      // If the session user has no active linked player profile, force logout.
+      if (!player) {
+        await supabase.auth.signOut();
+        if (cancelled) return;
+        setMustChangePassword(false);
+        setDisclaimerAccepted(true);
+        return;
+      }
+
+      setMustChangePassword(player.must_change_password ?? false);
+      setDisclaimerAccepted(player.disclaimer_accepted ?? false);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [session, segments]);
 
   useEffect(() => {
@@ -54,7 +72,12 @@ export default function RootLayout() {
 
     if (!session && !onAuthPage) {
       router.replace('/login');
-    } else if (session && mustChangePassword && segments[0] !== 'change-password') {
+    } else if (
+      session
+      && mustChangePassword
+      && segments[0] !== 'change-password'
+      && segments[0] !== 'forgot-password'
+    ) {
       router.replace('/change-password');
     } else if (session && !mustChangePassword && !disclaimerAccepted && segments[0] !== 'disclaimer') {
       router.replace('/disclaimer');

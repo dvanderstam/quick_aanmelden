@@ -1,11 +1,30 @@
 import { supabase } from './supabase';
 import { Player } from './types';
-import { DEFAULT_PASSWORD } from './config';
 
 const EMAIL_DOMAIN = 'quick.local';
 
+function normalizePlayer(row: any): Player {
+  return {
+    ...row,
+    active: row?.active ?? true,
+  } as Player;
+}
+
 function usernameToEmail(username: string): string {
   return `${username.toLowerCase().trim()}@${EMAIL_DOMAIN}`;
+}
+
+function getFunctionUrl(path: string): string {
+  const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+  if (baseUrl) {
+    return `${baseUrl.replace(/\/$/, '')}${path}`;
+  }
+
+  if (typeof window === 'undefined') {
+    throw new Error('EXPO_PUBLIC_API_BASE_URL ontbreekt voor deze omgeving.');
+  }
+
+  return path;
 }
 
 function validatePassword(password: string): string | null {
@@ -22,6 +41,29 @@ export async function signIn(username: string, password: string) {
     password,
   });
   if (error) throw new Error('Ongeldige gebruikersnaam of wachtwoord.');
+
+  const authUserId = data.user?.id;
+  if (!authUserId) {
+    await supabase.auth.signOut();
+    throw new Error('Inloggen mislukt. Probeer opnieuw.');
+  }
+
+  const { data: player, error: playerError } = await supabase
+    .from('players')
+    .select('active')
+    .eq('auth_user_id', authUserId)
+    .maybeSingle();
+
+  if (playerError) {
+    await supabase.auth.signOut();
+    throw new Error('Kon accountstatus niet controleren. Probeer opnieuw.');
+  }
+
+  if (!player || player.active === false) {
+    await supabase.auth.signOut();
+    throw new Error('Dit account is gedeactiveerd. Neem contact op met een beheerder.');
+  }
+
   return data;
 }
 
@@ -78,6 +120,7 @@ export async function getCurrentPlayer(): Promise<Player | null> {
     .single();
 
   if (!player) return null;
+  if (player.active === false) return null;
 
   // Fetch team memberships
   const { data: teams } = await supabase
@@ -86,7 +129,7 @@ export async function getCurrentPlayer(): Promise<Player | null> {
     .eq('player_id', player.id);
 
   return {
-    ...player,
+    ...normalizePlayer(player),
     team_ids: teams?.map((t: { team_id: string }) => t.team_id) || [],
     captain_team_ids:
       teams
@@ -102,10 +145,70 @@ export async function getAllPlayers(): Promise<Player[]> {
     .order('name');
 
   if (error) throw error;
-  return data || [];
+  const players = (data || []).map(normalizePlayer);
+
+  const { data: memberships, error: membershipsError } = await supabase
+    .from('player_teams')
+    .select('player_id, team_id, is_team_captain');
+
+  if (membershipsError) throw membershipsError;
+
+  const membershipByPlayer = new Map<number, { team_ids: string[]; captain_team_ids: string[] }>();
+  for (const row of memberships || []) {
+    const playerId = row.player_id as number;
+    const teamId = row.team_id as string;
+    const isCaptain = !!row.is_team_captain;
+
+    const existing = membershipByPlayer.get(playerId) || { team_ids: [], captain_team_ids: [] };
+    existing.team_ids.push(teamId);
+    if (isCaptain) existing.captain_team_ids.push(teamId);
+    membershipByPlayer.set(playerId, existing);
+  }
+
+  return players.map((player) => {
+    const membership = membershipByPlayer.get(player.id);
+    return {
+      ...player,
+      team_ids: membership?.team_ids || [],
+      captain_team_ids: membership?.captain_team_ids || [],
+    };
+  });
 }
 
 export async function getPlayersForTeam(teamId: string): Promise<Player[]> {
+  const { data, error } = await supabase
+    .from('player_teams')
+    .select('player_id')
+    .eq('team_id', teamId);
+
+  if (error) throw error;
+  const playerIds = data?.map((r: { player_id: number }) => r.player_id) || [];
+  if (playerIds.length === 0) return [];
+
+  let { data: players, error: pError } = await supabase
+    .from('players')
+    .select('*')
+    .in('id', playerIds)
+    .eq('active', true)
+    .order('name');
+
+  // Compatibility fallback while migration_v16 is not yet applied.
+  if (pError && /active/i.test(pError.message || '')) {
+    const fallback = await supabase
+      .from('players')
+      .select('*')
+      .in('id', playerIds)
+      .order('name');
+
+    pError = fallback.error;
+    players = fallback.data;
+  }
+
+  if (pError) throw pError;
+  return (players || []).map(normalizePlayer).filter((p) => p.active !== false);
+}
+
+export async function getAllPlayersForTeam(teamId: string): Promise<Player[]> {
   const { data, error } = await supabase
     .from('player_teams')
     .select('player_id')
@@ -122,7 +225,7 @@ export async function getPlayersForTeam(teamId: string): Promise<Player[]> {
     .order('name');
 
   if (pError) throw pError;
-  return players || [];
+  return (players || []).map(normalizePlayer);
 }
 
 export function canManageTeam(currentPlayer: Player, teamId: string): boolean {
@@ -164,56 +267,29 @@ export async function acceptDisclaimer(): Promise<void> {
   }
 }
 
-export async function resetForgottenPassword(username: string, newPassword: string): Promise<void> {
-  const email = usernameToEmail(username);
+export async function resetForgottenPassword(
+  username: string,
+  newPassword: string
+): Promise<void> {
+  const normalizedUsername = username.toLowerCase().trim();
 
-  // Validate that username exists and still has default password
-  const { data: player, error: lookupError } = await supabase
-    .from('players')
-    .select('must_change_password')
-    .eq('username', username.toLowerCase().trim())
-    .maybeSingle();
-
-  if (lookupError || !player) {
-    throw new Error('Wachtwoord resetten is niet mogelijk. Neem contact op met een beheerder.');
+  if (!normalizedUsername) {
+    throw new Error('Vul je gebruikersnaam in.');
   }
 
-  // Only allow reset if user still has the default password (must_change_password = true)
-  if (!player.must_change_password) {
-    throw new Error('Wachtwoord resetten is niet mogelijk. Neem contact op met een beheerder.');
-  }
+  const passwordError = validatePassword(newPassword);
+  if (passwordError) throw new Error(passwordError);
 
-  if (!DEFAULT_PASSWORD) {
-    throw new Error('Wachtwoord resetten is niet beschikbaar. Neem contact op met een beheerder.');
-  }
-
-  // Try to sign in with the default password
-  const { error: signInError } = await supabase.auth.signInWithPassword({
-    email,
-    password: DEFAULT_PASSWORD,
+  const response = await fetch(getFunctionUrl('/.netlify/functions/reset-forgotten-password'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ username: normalizedUsername, newPassword }),
   });
 
-  if (signInError) {
-    throw new Error(
-      'Wachtwoord resetten is niet mogelijk. Neem contact op met een beheerder.'
-    );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Wachtwoord resetten mislukt.');
   }
-
-  // Update to the new password
-  const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
-  if (updateError) {
-    await supabase.auth.signOut();
-    throw new Error('Wachtwoord wijzigen mislukt: ' + updateError.message);
-  }
-
-  // Mark password as changed
-  const { data: { user } } = await supabase.auth.getUser();
-  if (user) {
-    await supabase
-      .from('players')
-      .update({ must_change_password: false })
-      .eq('auth_user_id', user.id);
-  }
-
-  await supabase.auth.signOut();
 }

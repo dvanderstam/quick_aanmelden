@@ -672,11 +672,18 @@ const styles = StyleSheet.create({
     borderRadius: radii.xl,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.xl,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 14,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 8px 14px rgba(0,0,0,0.35)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.35,
+        shadowRadius: 14,
+        elevation: 14,
+      },
+    }),
   },
   modalCardBottomSheet: {
     maxWidth: '100%',

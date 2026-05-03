@@ -4,6 +4,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  ScrollView,
   StyleSheet,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -36,6 +37,14 @@ export default function ForgotPasswordScreen() {
     }
     if (newPassword.length < 8) {
       setError('Wachtwoord moet minimaal 8 tekens zijn.');
+      return;
+    }
+    if (!/[A-Z]/.test(newPassword)) {
+      setError('Wachtwoord moet minimaal 1 hoofdletter bevatten.');
+      return;
+    }
+    if (!/[0-9]/.test(newPassword)) {
+      setError('Wachtwoord moet minimaal 1 cijfer bevatten.');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -97,86 +106,98 @@ export default function ForgotPasswordScreen() {
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.hero}>
-          <Image
-            source={{ uri: QUICK_LOGO_URL }}
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
-          <Text style={styles.teamName}>{TEAM_NAME}</Text>
-          <Text style={styles.subtitle}>Wachtwoord herstellen</Text>
-        </View>
-
-        <View style={[styles.formCard, { width: contentWidth, alignSelf: 'center' }]}>
-          <Text style={styles.label}>Gebruikersnaam</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              value={username}
-              onChangeText={setUsername}
-              placeholder="bijv. daniel"
-              placeholderTextColor={M3.outline}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="username"
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          bounces={false}
+        >
+          <View style={styles.hero}>
+            <Image
+              source={{ uri: QUICK_LOGO_URL }}
+              style={styles.logoImage}
+              resizeMode="contain"
             />
+            <Text style={styles.teamName}>{TEAM_NAME}</Text>
+            <Text style={styles.subtitle}>Wachtwoord herstellen</Text>
           </View>
 
-          <Text style={styles.label}>Nieuw wachtwoord</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              value={newPassword}
-              onChangeText={setNewPassword}
-              placeholder="Minimaal 6 tekens"
-              placeholderTextColor={M3.outline}
-              secureTextEntry
-              autoComplete="new-password"
-            />
-          </View>
-
-          <Text style={styles.label}>Bevestig wachtwoord</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              placeholder="Herhaal wachtwoord"
-              placeholderTextColor={M3.outline}
-              secureTextEntry
-              autoComplete="new-password"
-            />
-          </View>
-
-          {error && (
-            <View style={styles.errorChip}>
-              <Text style={styles.errorText}>{error}</Text>
+          <View style={[styles.formCard, { width: contentWidth, alignSelf: 'center' }]}>
+            <View style={styles.hintChip}>
+              <Text style={styles.hintText}>
+                Vul je gebruikersnaam in en kies direct een nieuw wachtwoord. Gebruikersnaam kwijt? Vraag je teamcaptain; die kan ook je wachtwoord resetten.
+              </Text>
             </View>
-          )}
 
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleReset}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            {loading ? (
-              <ActivityIndicator color={M3.onPrimary} />
-            ) : (
-              <Text style={styles.buttonText}>Wachtwoord opslaan</Text>
+            <Text style={styles.label}>Gebruikersnaam</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                value={username}
+                onChangeText={setUsername}
+                placeholder="bijv. daniel"
+                placeholderTextColor={M3.outline}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="username"
+              />
+            </View>
+
+            <Text style={styles.label}>Nieuw wachtwoord</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                placeholder="Minimaal 8 tekens, 1 hoofdletter en 1 cijfer"
+                placeholderTextColor={M3.outline}
+                secureTextEntry
+                autoComplete="new-password"
+              />
+            </View>
+
+            <Text style={styles.label}>Bevestig wachtwoord</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="Herhaal wachtwoord"
+                placeholderTextColor={M3.outline}
+                secureTextEntry
+                autoComplete="new-password"
+              />
+            </View>
+
+            {error && (
+              <View style={styles.errorChip}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
             )}
-          </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.link}
-            onPress={() => router.push('/login')}
-          >
-            <Text style={styles.linkText}>
-              Terug naar{' '}
-              <Text style={styles.linkBold}>inloggen</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleReset}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              {loading ? (
+                <ActivityIndicator color={M3.onPrimary} />
+              ) : (
+                <Text style={styles.buttonText}>Wachtwoord resetten</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.link}
+              onPress={() => router.push('/login')}
+            >
+              <Text style={styles.linkText}>
+                Terug naar{' '}
+                <Text style={styles.linkBold}>inloggen</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </>
   );
@@ -186,6 +207,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: M3.surface,
+  },
+  scrollContent: {
+    paddingBottom: spacing.xl,
   },
   hero: {
     backgroundColor: '#1E5FA0',
@@ -213,6 +237,18 @@ const styles = StyleSheet.create({
   formCard: {
     padding: spacing.lg,
     marginTop: -spacing.md,
+  },
+  hintChip: {
+    backgroundColor: M3.secondaryContainer,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radii.full,
+    marginBottom: spacing.sm,
+  },
+  hintText: {
+    fontSize: 13,
+    color: M3.onSecondaryContainer,
+    textAlign: 'center',
   },
   label: {
     ...typography.labelMedium,
